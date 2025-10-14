@@ -1,6 +1,12 @@
-# Ignore Rust build output and debug files
+# Ignore Rust build artifacts
 /target/
 *.rlib
 *.pdb
-# Ignore cached model files (ONNX weights)
+
+# Ignore compiled binaries and debug symbols
+**/*.exe
+**/*.dll
+
+# Ignore model files (large ONNX weights)
 models/**/*.onnx
+models/**/*.onnx.json

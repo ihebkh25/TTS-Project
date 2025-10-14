@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "tts_core",
+    "llm_core",
+    "server"
+]
+resolver = "2"
+
+# Pin shared dependencies for the entire workspace.  This ensures that all crates
+# resolve to the same compatible versions.  In particular, piper-rs 0.1.9
+# depends on ort 2.0.0-rc.9, but without an explicit declaration Cargo may
+# upgrade to a newer release candidate (rc.10) that introduces breaking API
+# changes.  By specifying ort here, we ensure the build uses the version
+# piper-rs expects.
+[workspace.dependencies]
+ort = "=2.0.0-rc.9"

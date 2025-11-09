@@ -1,7 +1,7 @@
 // TTS Project - Frontend JavaScript
 
 // Configuration
-const API_BASE = 'http://localhost:8081';
+const API_BASE = 'http://localhost:8085';
 let isStreaming = false;
 let currentWebSocket = null;
 
@@ -274,7 +274,7 @@ function convertF32ArrayToWavBase64(samples, sampleRate) {
 // WebSocket Streaming Implementation
 async function startWebSocketStream(text, language) {
     const encodedText = encodeURIComponent(text);
-    const wsUrl = `ws://localhost:8081/stream/${language}/${encodedText}`;
+    const wsUrl = `ws://localhost:8085/stream/${language}/${encodedText}`;
     
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl);

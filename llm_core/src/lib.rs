@@ -14,6 +14,9 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+// For spawning async tasks from blocking context
+use tokio::runtime::Handle;
+
 /// LLM Provider type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LlmProvider {
@@ -47,13 +50,14 @@ pub trait LlmProviderTrait {
 /// OpenAI client implementation
 pub struct OpenAiClient {
     api_key: String,
-    client: Client,
+    client: std::sync::OnceLock<Client>,
     model: String,
     max_tokens: u16,
 }
 
 impl OpenAiClient {
     /// Create a new OpenAI client
+    /// Note: Client is created lazily to avoid creating a runtime in async context
     pub fn new(model: &str) -> Result<Self> {
         let api_key = env::var("OPENAI_API_KEY")
             .context("OPENAI_API_KEY must be set in the environment")?;
@@ -63,10 +67,15 @@ impl OpenAiClient {
             .unwrap_or(1000);
         Ok(Self {
             api_key,
-            client: Client::new(),
+            client: std::sync::OnceLock::new(),
             model: model.to_string(),
             max_tokens,
         })
+    }
+
+    /// Get or create the HTTP client (lazy initialization)
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 }
 
@@ -120,7 +129,7 @@ impl LlmProviderTrait for OpenAiClient {
         };
 
         let response = self
-            .client
+            .get_client()
             .post(url)
             .bearer_auth(&self.api_key)
             .json(&req_body)
@@ -139,20 +148,26 @@ impl LlmProviderTrait for OpenAiClient {
 
 /// Ollama client implementation (local LLM)
 pub struct OllamaClient {
-    client: Client,
+    client: std::sync::OnceLock<Client>,
     base_url: String,
     model: String,
 }
 
 impl OllamaClient {
     /// Create a new Ollama client
+    /// Note: Client is created lazily to avoid creating a runtime in async context
     pub fn new(model: &str) -> Result<Self> {
         let base_url = env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
         Ok(Self {
-            client: Client::new(),
+            client: std::sync::OnceLock::new(),
             base_url,
             model: model.to_string(),
         })
+    }
+
+    /// Get or create the HTTP client (lazy initialization)
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 }
 
@@ -201,7 +216,7 @@ impl LlmProviderTrait for OllamaClient {
         };
 
         let response = self
-            .client
+            .get_client()
             .post(&url)
             .json(&req_body)
             .send()?
@@ -470,17 +485,20 @@ impl LlmClient {
         conversation.updated_at = Utc::now();
 
         // Store in Qdrant if available
+        // Note: This is called from spawn_blocking, so we use Handle::try_current()
+        // to spawn async tasks from the blocking context
         if let Some(storage) = &self.storage {
-            // Note: This is a blocking call in async context
-            // In production, you'd want to spawn a task or use async storage methods
             let conv_clone = conversation.clone();
             let storage_clone = storage.clone();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async {
+            // Try to get the current Tokio runtime handle
+            if let Ok(handle) = Handle::try_current() {
+                handle.spawn(async move {
                     let _ = storage_clone.store_conversation(&conv_clone).await;
                 });
-            });
+            } else {
+                // If we can't get a handle, skip async storage (non-critical)
+                // This can happen if called from a non-Tokio context
+            }
         }
 
         Ok(reply)

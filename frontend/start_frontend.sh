@@ -10,10 +10,10 @@ cd "$SCRIPT_DIR"
 
 # Check if TTS server is running
 echo "🔍 Checking if TTS server is running..."
-if curl -s http://localhost:8081/health > /dev/null 2>&1; then
-    echo "✅ TTS server is running on port 8081"
+if curl -s http://localhost:8085/health > /dev/null 2>&1; then
+    echo "✅ TTS server is running on port 8085"
 else
-    echo "⚠️  TTS server is not running on port 8081"
+    echo "⚠️  TTS server is not running on port 8085"
     echo "💡 Start the TTS server first:"
     echo "   cargo run --release -p server"
     echo ""

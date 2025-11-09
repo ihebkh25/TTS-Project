@@ -1,0 +1,636 @@
+{
+	"info": {
+		"_postman_id": "tts-api-collection",
+		"name": "TTS API Collection",
+		"description": "Complete API collection for TTS Project - Text-to-Speech and Chat Server",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "tts-project"
+	},
+	"item": [
+		{
+			"name": "Health & Information",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is 'ok'\", function () {",
+									"    pm.expect(pm.response.text()).to.eql(\"ok\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Check if the server is running and healthy"
+					},
+					"response": []
+				},
+				{
+					"name": "List Available Voices",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is JSON array\", function () {",
+									"    pm.response.to.be.json;",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});",
+									"",
+									"pm.test(\"Contains language codes\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.length).to.be.above(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/voices",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"voices"
+							]
+						},
+						"description": "Get list of available language codes"
+					},
+					"response": []
+				},
+				{
+					"name": "List Voices Detail",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is JSON array\", function () {",
+									"    pm.response.to.be.json;",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});",
+									"",
+									"pm.test(\"Contains voice details\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.length > 0) {",
+									"        pm.expect(jsonData[0]).to.have.property('key');",
+									"        pm.expect(jsonData[0]).to.have.property('config');",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/voices/detail",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"voices",
+								"detail"
+							]
+						},
+						"description": "Get detailed information about available voices"
+					},
+					"response": []
+				}
+			],
+			"description": "Health check and voice information endpoints"
+		},
+		{
+			"name": "Text-to-Speech",
+			"item": [
+				{
+					"name": "Synthesize Speech - German",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains audio\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('audio_base64');",
+									"    pm.expect(jsonData).to.have.property('spectrogram_base64');",
+									"    pm.expect(jsonData).to.have.property('duration_ms');",
+									"    pm.expect(jsonData).to.have.property('sample_rate');",
+									"});",
+									"",
+									"pm.test(\"Audio data is base64\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.audio_base64).to.be.a('string');",
+									"    pm.expect(jsonData.audio_base64.length).to.be.above(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Hallo, dies ist ein Test!\",\n    \"language\": \"de_DE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Synthesize German text to speech"
+					},
+					"response": []
+				},
+				{
+					"name": "Synthesize Speech - French",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains audio\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('audio_base64');",
+									"    pm.expect(jsonData.sample_rate).to.be.above(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Bonjour, ceci est un test!\",\n    \"language\": \"fr_FR\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Synthesize French text to speech"
+					},
+					"response": []
+				},
+				{
+					"name": "Synthesize Speech - No Language",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Hello, this is a test!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Synthesize text without specifying language (uses default)"
+					},
+					"response": []
+				},
+				{
+					"name": "TTS - Validation Error (Empty Text)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Error message present\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('error');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"\",\n    \"language\": \"de_DE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Test validation error for empty text"
+					},
+					"response": []
+				},
+				{
+					"name": "TTS - Validation Error (Text Too Long)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"{{long_text}}\",\n    \"language\": \"de_DE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Test validation error for text exceeding 5000 characters"
+					},
+					"response": []
+				},
+				{
+					"name": "TTS - Validation Error (Invalid Language)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Hello, world!\",\n    \"language\": \"invalid_lang\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"tts"
+							]
+						},
+						"description": "Test validation error for invalid language code format"
+					},
+					"response": []
+				}
+			],
+			"description": "Text-to-Speech synthesis endpoints"
+		},
+		{
+			"name": "Chat",
+			"item": [
+				{
+					"name": "Chat - New Conversation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains reply\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('reply');",
+									"    pm.expect(jsonData).to.have.property('conversation_id');",
+									"});",
+									"",
+									"pm.test(\"Conversation ID is UUID\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+									"    pm.expect(jsonData.conversation_id).to.match(uuidRegex);",
+									"});",
+									"",
+									"// Save conversation ID for next request",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set('conversation_id', jsonData.conversation_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Hello, how are you?\",\n    \"conversation_id\": null\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Start a new conversation with the LLM"
+					},
+					"response": []
+				},
+				{
+					"name": "Chat - Continue Conversation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Uses same conversation ID\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var savedId = pm.environment.get('conversation_id');",
+									"    if (savedId) {",
+									"        pm.expect(jsonData.conversation_id).to.eql(savedId);",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Tell me more about that.\",\n    \"conversation_id\": \"{{conversation_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Continue an existing conversation using conversation_id"
+					},
+					"response": []
+				},
+				{
+					"name": "Chat - Validation Error (Empty Message)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"\",\n    \"conversation_id\": null\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Test validation error for empty message"
+					},
+					"response": []
+				},
+				{
+					"name": "Chat - Validation Error (Invalid Conversation ID)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Hello\",\n    \"conversation_id\": \"invalid-uuid\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Test validation error for invalid conversation ID format"
+					},
+					"response": []
+				}
+			],
+			"description": "Chat endpoints for LLM interactions"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Generate long text for validation tests",
+					"if (!pm.environment.get('long_text')) {",
+					"    var longText = 'a'.repeat(6000);",
+					"    pm.environment.set('long_text', longText);",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8085",
+			"type": "string"
+		},
+		{
+			"key": "conversation_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "long_text",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+

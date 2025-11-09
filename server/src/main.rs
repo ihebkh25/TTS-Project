@@ -156,11 +156,11 @@ async fn async_main() -> anyhow::Result<()> {
         .layer(middleware_stack)
         .with_state(state);
 
-    // Get port from environment variable or default to 8081
+    // Get port from environment variable or default to 8085
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(8081);
+        .unwrap_or(8085);
     let addr: SocketAddr = format!("0.0.0.0:{}", port)
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse address: {}", e))?;

@@ -40,7 +40,7 @@ def main(port):
             print(f"🌐 Frontend server starting on port {PORT}")
             print(f"📁 Serving files from: {os.getcwd()}")
             print(f"🔗 Frontend URL: http://localhost:{PORT}")
-            print(f"🎵 TTS Server should be running on: http://localhost:8081")
+            print(f"🎵 TTS Server should be running on: http://localhost:8085")
             print("\n" + "="*60)
             print("🚀 TTS PROJECT - FRONTEND INTERFACE")
             print("="*60)

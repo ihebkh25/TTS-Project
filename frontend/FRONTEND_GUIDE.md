@@ -18,7 +18,7 @@ python3 serve_frontend.py
 
 ### 3. Open the Frontend
 - **Frontend URL**: http://localhost:8082
-- **TTS Server**: http://localhost:8081
+- **TTS Server**: http://localhost:8085
 
 ## 🎯 Features Overview
 
@@ -142,14 +142,14 @@ python3 serve_frontend.py --port 8083
 #### TTS Server Not Responding
 ```bash
 # Check if TTS server is running
-curl http://localhost:8081/health
+curl http://localhost:8085/health
 
 # Start TTS server
 cargo run --release -p server
 ```
 
 #### WebSocket Connection Failed
-- Ensure TTS server is running on port 8081
+- Ensure TTS server is running on port 8085
 - Check browser console for errors
 - Verify WebSocket URL format
 

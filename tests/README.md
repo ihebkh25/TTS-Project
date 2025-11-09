@@ -214,7 +214,7 @@ export QDRANT_URL="http://localhost:6333"
 export QDRANT_API_KEY=""  # Optional
 
 # Server Tests
-export PORT="8081"
+export PORT="8085"
 export RATE_LIMIT_PER_MINUTE="60"
 ```
 

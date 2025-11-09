@@ -14,5 +14,10 @@ models/**/*.onnx.json
 PROJECT_ANALYSIS.md
 tts_project_wiki copy.md
 
+.DS_Store
 .env
 .idea
+
+models/.DS_Store
+server/.DS_Store
+tests/.DS_Store

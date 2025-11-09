@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::{Arc, Mutex}};
 
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
@@ -7,9 +7,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use tokio::{net::TcpListener, sync::Mutex};
+use tokio::net::TcpListener;
 use llm_core::OpenAiClient;
 
 #[derive(Clone)]
@@ -28,8 +27,10 @@ struct TtsRequest {
 
 #[derive(Serialize)]
 struct TtsResponse {
-    wav_base64: String,
+    audio_base64: String,
     spectrogram_base64: String,
+    duration_ms: u64,
+    sample_rate: u32,
 }
 
 #[derive(Serialize)]
@@ -39,8 +40,20 @@ struct VoiceInfo {
     speaker: Option<i64>,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    // Load environment variables from .env file before creating tokio runtime
+    dotenv::dotenv().ok();
+    
+    // Init LLM client before creating tokio runtime (since it uses blocking client)
+    let llm = OpenAiClient::new("gpt-3.5-turbo")?;
+    let llm = Arc::new(Mutex::new(llm));
+    
+    // Create tokio runtime
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async_main(llm))
+}
+
+async fn async_main(llm: Arc<Mutex<OpenAiClient>>) -> anyhow::Result<()> {
     // Init TTS:
     // Try to load models/map.json; if missing, fall back to an empty map
     // so env-based defaults (if you wired them) can still work.
@@ -48,9 +61,6 @@ async fn main() -> anyhow::Result<()> {
         tts_core::TtsManager::new_from_mapfile("models/map.json")
             .unwrap_or_else(|_| tts_core::TtsManager::new(std::collections::HashMap::new())),
     );
-
-    // Init LLM (your stub/engine)
-    let llm = Arc::new(Mutex::new(OpenAiClient::new("gpt-3.5-turbo")?));
 
     let state = AppState { tts, llm };
 
@@ -63,8 +73,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/stream/:lang/:text", get(stream_ws))
         .with_state(state);
 
-    let addr: SocketAddr = "0.0.0.0:8080".parse().unwrap();
-    let listener = TcpListener::bind(addr).await?;
+    // Get port from environment variable or default to 8081
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8081);
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse address: {}", e))?;
+    
+    let listener = TcpListener::bind(addr).await
+        .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}. Try a different port by setting PORT environment variable.", addr, e))?;
     println!("Server listening on http://{}", addr);
 
     axum::serve(listener, app).await?;
@@ -108,12 +126,17 @@ async fn tts_endpoint(
     let spectrogram_base64 = tts_core::TtsManager::mel_to_png_base64(&mel);
 
     // 3) WAV (base64)
-    let wav_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate as u32)
+    let audio_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate as u32)
         .map_err(internal_err)?;
 
+    // Calculate duration in milliseconds
+    let duration_ms = (samples.len() as f32 / sample_rate * 1000.0) as u64;
+
     Ok(Json(TtsResponse {
-        wav_base64,
+        audio_base64,
         spectrogram_base64,
+        duration_ms,
+        sample_rate: sample_rate as u32,
     }))
 }
 
@@ -130,9 +153,15 @@ async fn chat_endpoint(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
-    let llm = state.llm.lock().await;
-    let reply = llm.chat(&req.message)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let message = req.message.clone();
+    let llm = state.llm.clone();
+    let reply = tokio::task::spawn_blocking(move || {
+        let llm = llm.lock().unwrap();
+        llm.chat(&message)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Task join error: {}", e)))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(ChatResponse { reply }))
 }
 
@@ -145,7 +174,6 @@ async fn stream_ws(
 ) -> impl IntoResponse {
     ws.on_upgrade(move |mut socket| async move {
         use axum::extract::ws::Message;
-        use futures_util::SinkExt;
 
         // Synthesize full audio once
         let samples = match state.tts.synthesize_blocking(&text, Some(&lang)) {

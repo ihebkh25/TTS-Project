@@ -13,6 +13,7 @@ mel_spec = "0.3"
 ndarray = "0.16"
 num-complex = "0.4"
 futures-util = "0.3"
+dotenv = "0.15"
 tts_core = { path = "../tts_core" }
 llm_core = { path = "../llm_core" }
 

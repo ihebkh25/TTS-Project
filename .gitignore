@@ -10,3 +10,9 @@
 # Ignore model files (large ONNX weights)
 models/**/*.onnx
 models/**/*.onnx.json
+
+PROJECT_ANALYSIS.md
+tts_project_wiki copy.md
+
+.env
+.idea

@@ -1,3 +1,7 @@
+mod stream;
+mod wav;
+mod melspec;
+
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::Context;
@@ -221,7 +225,7 @@ impl TtsManager {
 
         let mut png_bytes: Vec<u8> = Vec::new();
         {
-            let mut encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
             use image::ImageEncoder;
             // Provide raw grayscale buffer and ColorType::L8
             encoder

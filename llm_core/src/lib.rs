@@ -1,5 +1,5 @@
 use anyhow::Result;
-use reqwest::{blocking::Client, header};
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -30,7 +30,6 @@ struct Choice {
 
 #[derive(Deserialize)]
 struct ResponseMessage {
-    role: String,
     content: String,
 }
 

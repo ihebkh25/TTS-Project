@@ -9,6 +9,7 @@
 :root {
     --primary: #2563eb;
     --primary-dark: #1e40af;
+    --primary-light: #3b82f6;
     --bg: #fafafa;
     --surface: #ffffff;
     --text: #18181b;
@@ -16,7 +17,11 @@
     --border: #e4e4e7;
     --success: #22c55e;
     --error: #ef4444;
+    --warning: #f59e0b;
+    --info: #3b82f6;
     --radius: 12px;
+    --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 body {
@@ -29,7 +34,7 @@ body {
 }
 
 .container {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
@@ -39,16 +44,27 @@ body {
     margin-bottom: 3rem;
 }
 
+.header-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
 .header h1 {
-    font-size: 2rem;
+    font-size: 2.5rem;
     font-weight: 700;
     letter-spacing: -0.025em;
     margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .header p {
     color: var(--text-secondary);
-    font-size: 0.95rem;
+    font-size: 1rem;
 }
 
 /* Status Badge */
@@ -60,19 +76,21 @@ body {
     border-radius: 2rem;
     font-size: 0.875rem;
     font-weight: 500;
-    margin-bottom: 1rem;
     background: var(--surface);
     border: 1px solid var(--border);
+    box-shadow: var(--shadow);
 }
 
 .status-badge.connected {
     border-color: var(--success);
     color: var(--success);
+    background: #f0fdf4;
 }
 
 .status-badge.disconnected {
     border-color: var(--error);
     color: var(--error);
+    background: #fef2f2;
 }
 
 .status-dot {
@@ -88,10 +106,10 @@ body {
     50% { opacity: 0.5; }
 }
 
-/* Grid Layout */
-.grid {
+/* Main Content */
+.main-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
     gap: 1.5rem;
 }
 
@@ -101,25 +119,61 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1.5rem;
+    box-shadow: var(--shadow);
     transition: all 0.2s;
 }
 
 .card:hover {
     border-color: var(--primary);
+    box-shadow: var(--shadow-lg);
 }
 
-.card h2 {
-    font-size: 1.125rem;
-    font-weight: 600;
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 1.25rem;
+}
+
+.card-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
 
+.chat-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.375rem 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s;
+    color: var(--text-secondary);
+}
+
+.btn-icon:hover {
+    background: var(--bg);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
 /* Form Elements */
 .form-group {
     margin-bottom: 1rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
 }
 
 .form-group label {
@@ -150,12 +204,31 @@ input:focus, select:focus, textarea:focus {
 
 textarea {
     resize: vertical;
-    min-height: 80px;
+    min-height: 100px;
+}
+
+.input-readonly {
+    background: var(--bg);
+    cursor: not-allowed;
+}
+
+.input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-group input {
+    flex: 1;
+}
+
+.char-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
 }
 
 /* Buttons */
 .btn {
-    width: 100%;
     padding: 0.625rem 1.25rem;
     background: var(--primary);
     color: white;
@@ -169,50 +242,77 @@ textarea {
     margin-top: 0.5rem;
 }
 
-.btn:hover:not(:disabled) {
-    background: var(--primary-dark);
+.btn-primary {
+    width: 100%;
+    background: var(--primary);
 }
 
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.btn-primary:hover:not(:disabled) {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
 }
 
 .btn-secondary {
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
+    width: 100%;
 }
 
 .btn-secondary:hover:not(:disabled) {
     background: var(--bg);
+    border-color: var(--primary);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.button-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
 }
 
 /* Status Messages */
-.status-message {
-    margin-top: 0.75rem;
+.status-container {
+    margin-top: 1rem;
+}
+
+.status {
     padding: 0.75rem;
     border-radius: 8px;
     font-size: 0.875rem;
+    line-height: 1.5;
     border: 1px solid;
 }
 
-.status-message.success {
+.status-success {
     background: #f0fdf4;
     border-color: #bbf7d0;
     color: #15803d;
 }
 
-.status-message.error {
+.status-error {
     background: #fef2f2;
     border-color: #fecaca;
     color: #b91c1c;
 }
 
-.status-message.info {
+.status-info {
     background: #eff6ff;
     border-color: #bfdbfe;
     color: #1e40af;
+}
+
+.status-warning {
+    background: #fffbeb;
+    border-color: #fed7aa;
+    color: #92400e;
 }
 
 /* Audio Player */
@@ -222,9 +322,27 @@ textarea {
     border-radius: 8px;
 }
 
+/* Progress Bar */
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    margin-top: 1rem;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 4px;
+}
+
 /* Chat Messages */
 .chat-messages {
-    height: 280px;
+    height: 300px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -246,22 +364,47 @@ textarea {
     border-radius: 3px;
 }
 
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
 .message {
     margin-bottom: 0.75rem;
     padding: 0.75rem;
     border-radius: 8px;
     font-size: 0.9375rem;
     line-height: 1.5;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .message.user {
     background: #eff6ff;
     border-left: 3px solid var(--primary);
+    margin-left: 1rem;
 }
 
 .message.bot {
     background: var(--surface);
     border-left: 3px solid var(--text-secondary);
+    margin-right: 1rem;
+}
+
+.message.welcome {
+    background: #f0fdf4;
+    border-left: 3px solid var(--success);
+    text-align: center;
+    margin: 0;
 }
 
 .message strong {
@@ -269,19 +412,31 @@ textarea {
 }
 
 /* Spectrogram */
-.spectrogram {
+.spectrogram-container {
     margin-top: 1rem;
 }
 
-.spectrogram img {
+.spectrogram-wrapper {
+    margin-top: 1rem;
+}
+
+.spectrogram-wrapper h4 {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.spectrogram-image {
     max-width: 100%;
     border-radius: 8px;
     border: 1px solid var(--border);
+    box-shadow: var(--shadow);
 }
 
 /* Utility Classes */
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 /* Responsive Design */
@@ -291,15 +446,31 @@ textarea {
     }
 
     .header h1 {
-        font-size: 1.75rem;
+        font-size: 2rem;
     }
 
-    .grid {
+    .main-content {
         grid-template-columns: 1fr;
     }
 
     .card {
         padding: 1.25rem;
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .button-group {
+        grid-template-columns: 1fr;
+    }
+
+    .input-group {
+        flex-direction: column;
+    }
+
+    .chat-messages {
+        height: 250px;
     }
 }
 
@@ -308,6 +479,7 @@ textarea {
     :root {
         --primary: #3b82f6;
         --primary-dark: #2563eb;
+        --primary-light: #60a5fa;
         --bg: #09090b;
         --surface: #18181b;
         --text: #fafafa;
@@ -315,10 +487,17 @@ textarea {
         --border: #27272a;
         --success: #22c55e;
         --error: #ef4444;
+        --warning: #f59e0b;
+        --info: #3b82f6;
     }
 
     input, select, textarea {
         color: var(--text);
+        background: var(--surface);
+    }
+
+    .input-readonly {
+        background: var(--bg);
     }
 
     .message.user {
@@ -329,21 +508,31 @@ textarea {
         background: var(--surface);
     }
 
-    .status-message.success {
+    .message.welcome {
+        background: #14532d;
+    }
+
+    .status-success {
         background: #14532d;
         border-color: #166534;
         color: #86efac;
     }
 
-    .status-message.error {
+    .status-error {
         background: #7f1d1d;
         border-color: #991b1b;
         color: #fca5a5;
     }
 
-    .status-message.info {
+    .status-info {
         background: #1e3a8a;
         border-color: #1e40af;
         color: #93c5fd;
+    }
+
+    .status-warning {
+        background: #78350f;
+        border-color: #92400e;
+        color: #fcd34d;
     }
 }

@@ -6,12 +6,12 @@ High-performance multilingual Text-to-Speech and Chat server built with Rust, fe
 
 **Docker (Recommended):**
 ```bash
-# Build and run with Docker
-docker build -t tts-server .
-docker run -p 8085:8085 -e OPENAI_API_KEY="your_key" tts-server
-
-# Or use docker-compose
+# Run with docker-compose (includes frontend)
 docker-compose up --build
+
+# Access:
+# - Frontend: http://localhost:8082
+# - API: http://localhost:8085
 ```
 
 **Local Build:**
@@ -74,23 +74,23 @@ Rust workspace with three crates:
 
 ## Docker
 
-The project includes a multi-stage Dockerfile for easy deployment:
-
+**docker-compose (Recommended):**
 ```bash
-# Build image
-docker build -t tts-server .
-
-# Run container
-docker run -p 8085:8085 \
-  -e OPENAI_API_KEY="your_key" \
-  -e LLM_PROVIDER="openai" \
-  tts-server
-
-# Or use docker-compose
 docker-compose up --build
 ```
+- Frontend: http://localhost:8082
+- API: http://localhost:8085
 
-The Docker image includes all models and dependencies. See `docker-compose.yml` for environment variable configuration.
+**Individual services:**
+```bash
+# TTS Server
+docker build -t tts-server .
+docker run -p 8085:8085 -e OPENAI_API_KEY="your_key" tts-server
+
+# Frontend
+cd frontend && docker build -t tts-frontend .
+docker run -p 8082:80 tts-frontend
+```
 
 ## Documentation
 

@@ -1,0 +1,7 @@
+*.md
+serve_frontend.py
+start_frontend.sh
+__pycache__/
+*.pyc
+.DS_Store
+

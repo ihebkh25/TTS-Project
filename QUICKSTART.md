@@ -10,18 +10,15 @@
 ### Option 1: Docker (Recommended)
 
 ```bash
-# Build and run
-docker build -t tts-server .
-docker run -p 8085:8085 \
-  -e OPENAI_API_KEY="your_key" \
-  -e LLM_PROVIDER="openai" \
-  tts-server
-
-# Or use docker-compose
+# Run with docker-compose (includes frontend)
 docker-compose up --build
+
+# Access:
+# - Frontend: http://localhost:8082
+# - API: http://localhost:8085
 ```
 
-The Docker image includes all models and dependencies. Models are mounted from `./models` directory.
+The Docker setup includes both server and frontend. Models are mounted from `./models` directory.
 
 ### Option 2: Local Build
 
@@ -71,11 +68,15 @@ export PIPER_ESPEAKNG_DATA_DIRECTORY=/usr/share  # For local builds
 # Build
 cargo build --release
 
-# Run
+# Run server
 cargo run --release -p server
+
+# Run frontend (separate terminal)
+cd frontend && python3 serve_frontend.py
 
 # Verify
 curl http://localhost:8085/health
+# Frontend: http://localhost:8082
 ```
 
 ## API Examples

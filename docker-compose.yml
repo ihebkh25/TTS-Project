@@ -16,3 +16,10 @@ services:
     volumes:
       - ./models:/app/models:ro
 
+  frontend:
+    build: ./frontend
+    ports:
+      - "8082:80"
+    depends_on:
+      - tts-server
+

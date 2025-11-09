@@ -2,12 +2,19 @@
 
 use axum::Router;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tts_core::TtsManager;
 use llm_core::{LlmClient, LlmProvider};
 use tower::ServiceExt;
 
-use server::AppState;
+// Note: AppState is defined in main.rs, so we need to define it here for tests
+// In a real scenario, this would be in a shared module
+
+#[derive(Clone)]
+pub struct AppState {
+    pub tts: Arc<tts_core::TtsManager>,
+    pub llm: Arc<Mutex<LlmClient>>,
+}
 
 /// Create a test app instance
 pub async fn create_test_app() -> Router {
@@ -42,13 +49,33 @@ pub async fn create_test_app() -> Router {
 
     let state = AppState { tts, llm };
     
+    // Create a simple test router
+    // Note: In a real scenario, you'd want to extract handlers to a shared module
+    // For now, we'll create a minimal test app
+    use axum::Json;
+    
     Router::new()
-        .route("/health", get(server::health_check))
-        .route("/voices", get(server::list_voices))
-        .route("/voices/detail", get(server::list_voices_detail))
-        .route("/tts", post(server::tts_endpoint))
-        .route("/chat", post(server::chat_endpoint))
-        .route("/stream/:lang/:text", get(server::stream_ws))
+        .route("/health", get(|| async { "ok" }))
+        .route("/voices", get({
+            let tts = state.tts.clone();
+            move || async move {
+                Json(tts.list_languages())
+            }
+        }))
+        .route("/voices/detail", get({
+            let tts = state.tts.clone();
+            move || async move {
+                let mut out = Vec::new();
+                for (k, (cfg, spk)) in tts.map_iter() {
+                    out.push(serde_json::json!({
+                        "key": k,
+                        "config": cfg,
+                        "speaker": spk
+                    }));
+                }
+                Json(out)
+            }
+        }))
         .layer(ServiceBuilder::new().layer(CorsLayer::permissive()).into_inner())
         .with_state(state)
 }

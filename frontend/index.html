@@ -3,142 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TTS Project - Frontend</title>
+    <title>TTS Project</title>
     <link rel="stylesheet" href="styles.css">
     <meta name="description" content="Text-to-Speech server with real-time streaming and AI chat integration">
-    <meta name="keywords" content="TTS, text-to-speech, audio, streaming, AI, chat">
 </head>
 <body>
-    <!-- Server Status Indicator -->
-    <div class="server-status" id="serverStatus">Checking...</div>
-    
-    <!-- Main Container -->
-    <div class="container">
-        <!-- Header Section -->
-        <header class="header">
-            <h1>🎵 TTS Project</h1>
-            <p>Text-to-Speech Server with Real-time Streaming</p>
-        </header>
+<div class="container">
+    <header class="header">
+        <div class="status-badge" id="serverStatus">
+            <span class="status-dot"></span>
+            <span>Checking...</span>
+        </div>
+        <h1>TTS Project</h1>
+        <p>Text-to-Speech Server with Real-time Streaming</p>
+    </header>
 
-        <!-- Main Content Grid -->
-        <main class="main-content">
-            <!-- TTS Section -->
-            <section class="section">
-                <h2>🎤 Text-to-Speech</h2>
-                <form id="ttsForm" novalidate>
-                    <div class="form-group">
-                        <label for="ttsText">Text to synthesize:</label>
-                        <textarea 
-                            id="ttsText" 
-                            name="text"
-                            placeholder="Enter text to convert to speech..." 
-                            required
-                            rows="4"
-                        >Hello, this is a test of the TTS system!</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="ttsLanguage">Language:</label>
-                        <select id="ttsLanguage" name="language" required>
-                            <option value="en_US">English (US)</option>
-                            <option value="de_DE">German</option>
-                            <option value="fr_FR">French</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn" id="ttsBtn">
-                        🎵 Generate Speech
-                    </button>
-                </form>
-                <div id="ttsStatus" role="status" aria-live="polite"></div>
-                <audio id="ttsAudio" class="audio-player" controls style="display: none;" aria-label="Generated speech audio">
-                    Your browser does not support the audio element.
-                </audio>
-                <div id="ttsSpectrogram" class="spectrogram" aria-label="Audio spectrogram visualization"></div>
-            </section>
-
-            <!-- Streaming Section -->
-            <section class="section">
-                <h2>📡 Real-time Streaming</h2>
-                <form id="streamForm" novalidate>
-                    <div class="form-group">
-                        <label for="streamText">Text to stream:</label>
-                        <textarea 
-                            id="streamText" 
-                            name="text"
-                            placeholder="Enter text for real-time streaming..." 
-                            required
-                            rows="4"
-                        >Hello World, this is streaming audio!</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="streamLanguage">Language:</label>
-                        <select id="streamLanguage" name="language" required>
-                            <option value="en_US">English (US)</option>
-                            <option value="de_DE">German</option>
-                            <option value="fr_FR">French</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn" id="streamBtn">
-                        📡 Start Streaming
-                    </button>
-                </form>
-                <div id="streamStatus" role="status" aria-live="polite"></div>
-                <audio id="streamAudio" class="audio-player" controls style="display: none;" aria-label="Streamed audio">
-                    Your browser does not support the audio element.
-                </audio>
-            </section>
-
-            <!-- Chat Section -->
-            <section class="section">
-                <h2>💬 AI Chat</h2>
-                <div class="chat-messages" id="chatMessages" role="log" aria-label="Chat conversation">
-                    <div class="message bot">
-                        <strong>Bot:</strong> Hello! I'm your AI assistant. Ask me anything!
-                    </div>
-                </div>
-                <form id="chatForm" novalidate>
-                    <div class="form-group">
-                        <label for="chatInput">Your message:</label>
-                        <input 
-                            type="text" 
-                            id="chatInput" 
-                            name="message"
-                            placeholder="Type your message here..." 
-                            required
-                            autocomplete="off"
-                        >
-                    </div>
-                    <button type="submit" class="btn" id="chatBtn">
-                        💬 Send Message
-                    </button>
-                </form>
-                <div id="chatStatus" role="status" aria-live="polite"></div>
-            </section>
-
-            <!-- Server Info Section -->
-            <section class="section">
-                <h2>🔧 Server Information</h2>
+    <main class="grid">
+        <div class="card">
+            <h2>🎤 Text-to-Speech</h2>
+            <form id="ttsForm">
                 <div class="form-group">
-                    <label for="serverUrl">Server URL:</label>
-                    <input 
-                        type="text" 
-                        id="serverUrl" 
-                        value="http://localhost:8085" 
-                        readonly
-                        aria-label="TTS server URL"
-                    >
+                    <label for="ttsText">Text</label>
+                    <textarea id="ttsText" name="text" placeholder="Enter text to convert to speech..." required>Hello, this is a test of the TTS system!</textarea>
                 </div>
-                <button class="btn" onclick="checkServerStatus()" type="button">
-                    🔄 Check Server Status
-                </button>
-                <button class="btn" onclick="getVoices()" type="button">
-                    🎭 Get Available Voices
-                </button>
-                <div id="serverInfo" role="status" aria-live="polite"></div>
-            </section>
-        </main>
-    </div>
+                <div class="form-group">
+                    <label for="ttsLanguage">Language</label>
+                    <select id="ttsLanguage" name="language" required>
+                        <option value="en_US">English (US)</option>
+                        <option value="de_DE">German</option>
+                        <option value="fr_FR">French</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn" id="ttsBtn">Generate Speech</button>
+            </form>
+            <div id="ttsStatus"></div>
+            <audio id="ttsAudio" class="audio-player hidden" controls></audio>
+            <div id="ttsSpectrogram" class="spectrogram"></div>
+        </div>
 
-    <!-- JavaScript -->
-    <script src="script.js"></script>
+        <div class="card">
+            <h2>📡 Real-time Streaming</h2>
+            <form id="streamForm">
+                <div class="form-group">
+                    <label for="streamText">Text</label>
+                    <textarea id="streamText" name="text" placeholder="Enter text for real-time streaming..." required>Hello World, this is streaming audio!</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="streamLanguage">Language</label>
+                    <select id="streamLanguage" name="language" required>
+                        <option value="en_US">English (US)</option>
+                        <option value="de_DE">German</option>
+                        <option value="fr_FR">French</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn" id="streamBtn">Start Streaming</button>
+            </form>
+            <div id="streamStatus"></div>
+            <audio id="streamAudio" class="audio-player hidden" controls></audio>
+        </div>
+
+        <div class="card">
+            <h2>💬 AI Chat</h2>
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot">
+                    <strong>Bot:</strong> Hello! I'm your AI assistant. Ask me anything!
+                </div>
+            </div>
+            <form id="chatForm">
+                <div class="form-group">
+                    <label for="chatInput">Message</label>
+                    <input type="text" id="chatInput" name="message" placeholder="Type your message here..." required autocomplete="off">
+                </div>
+                <button type="submit" class="btn" id="chatBtn">Send</button>
+            </form>
+            <div id="chatStatus"></div>
+        </div>
+
+        <div class="card">
+            <h2>🔧 Server</h2>
+            <div class="form-group">
+                <label for="serverUrl">Server URL</label>
+                <input type="text" id="serverUrl" value="http://localhost:8085" readonly>
+            </div>
+            <button class="btn btn-secondary" onclick="checkServerStatus()" type="button">Check Status</button>
+            <button class="btn btn-secondary" onclick="getVoices()" type="button">Get Voices</button>
+            <div id="serverInfo"></div>
+        </div>
+    </main>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>

@@ -1,213 +1,236 @@
-/* TTS Project - Frontend Styles */
+/* Modern TTS Project Styles */
 
-/* Reset and Base Styles */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
+:root {
+    --primary: #2563eb;
+    --primary-dark: #1e40af;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --text: #18181b;
+    --text-secondary: #71717a;
+    --border: #e4e4e7;
+    --success: #22c55e;
+    --error: #ef4444;
+    --radius: 12px;
+}
+
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
     line-height: 1.6;
+    padding: 2rem 1rem;
+    min-height: 100vh;
 }
 
-/* Container and Layout */
 .container {
-    max-width: 1200px;
+    max-width: 1100px;
     margin: 0 auto;
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-    overflow: hidden;
 }
 
+/* Header */
 .header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 30px;
     text-align: center;
+    margin-bottom: 3rem;
 }
 
 .header h1 {
-    font-size: 2.5em;
-    margin-bottom: 10px;
+    font-size: 2rem;
     font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 0.5rem;
 }
 
 .header p {
-    font-size: 1.2em;
-    opacity: 0.9;
-    font-weight: 300;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
 }
 
-/* Main Content Grid */
-.main-content {
+/* Status Badge */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 2rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+.status-badge.connected {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.status-badge.disconnected {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Grid Layout */
+.grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
-    padding: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
 }
 
-/* Section Styling */
-.section {
-    background: #f8f9fa;
-    border-radius: 10px;
-    padding: 25px;
-    border: 1px solid #e9ecef;
-    transition: transform 0.2s, box-shadow 0.2s;
+/* Card Component */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    transition: all 0.2s;
 }
 
-.section:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+.card:hover {
+    border-color: var(--primary);
 }
 
-.section h2 {
-    color: #333;
-    margin-bottom: 20px;
-    font-size: 1.5em;
-    border-bottom: 2px solid #667eea;
-    padding-bottom: 10px;
+.card h2 {
+    font-size: 1.125rem;
     font-weight: 600;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 /* Form Elements */
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 1rem;
 }
 
 .form-group label {
     display: block;
-    margin-bottom: 8px;
-    font-weight: 600;
-    color: #555;
-    font-size: 0.95em;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    color: var(--text);
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea {
+input, select, textarea {
     width: 100%;
-    padding: 12px;
-    border: 2px solid #ddd;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    font-size: 16px;
-    transition: border-color 0.3s, box-shadow 0.3s;
+    font-size: 0.9375rem;
     font-family: inherit;
+    color: var(--text);
+    background: var(--surface);
+    transition: all 0.2s;
 }
 
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
+input:focus, select:focus, textarea:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.form-group textarea {
+textarea {
     resize: vertical;
-    min-height: 100px;
-    font-family: inherit;
+    min-height: 80px;
 }
 
 /* Buttons */
 .btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    width: 100%;
+    padding: 0.625rem 1.25rem;
+    background: var(--primary);
     color: white;
     border: none;
-    padding: 12px 24px;
     border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 0.9375rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    width: 100%;
+    transition: all 0.2s;
     font-family: inherit;
+    margin-top: 0.5rem;
 }
 
-.btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-}
-
-.btn:active {
-    transform: translateY(0);
+.btn:hover:not(:disabled) {
+    background: var(--primary-dark);
 }
 
 .btn:disabled {
-    background: #ccc;
+    opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
+}
+
+.btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--bg);
 }
 
 /* Status Messages */
-.status {
-    margin-top: 15px;
-    padding: 12px;
+.status-message {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
     border-radius: 8px;
-    font-weight: 500;
-    font-size: 0.95em;
+    font-size: 0.875rem;
+    border: 1px solid;
 }
 
-.status.success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+.status-message.success {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #15803d;
 }
 
-.status.error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+.status-message.error {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
 }
 
-.status.info {
-    background: #d1ecf1;
-    color: #0c5460;
-    border: 1px solid #bee5eb;
+.status-message.info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
 }
 
 /* Audio Player */
 .audio-player {
-    margin-top: 15px;
+    margin-top: 1rem;
     width: 100%;
     border-radius: 8px;
 }
 
-/* Spectrogram */
-.spectrogram {
-    margin-top: 15px;
-    text-align: center;
-}
-
-.spectrogram h4 {
-    margin-bottom: 10px;
-    color: #555;
-    font-size: 1.1em;
-}
-
-.spectrogram img {
-    max-width: 100%;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-/* Chat Interface */
+/* Chat Messages */
 .chat-messages {
-    height: 300px;
+    height: 280px;
     overflow-y: auto;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 15px;
-    background: white;
-    margin-bottom: 15px;
-    scrollbar-width: thin;
-    scrollbar-color: #667eea #f1f1f1;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: var(--bg);
 }
 
 .chat-messages::-webkit-scrollbar {
@@ -215,188 +238,112 @@ body {
 }
 
 .chat-messages::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
+    background: transparent;
 }
 
 .chat-messages::-webkit-scrollbar-thumb {
-    background: #667eea;
+    background: var(--border);
     border-radius: 3px;
 }
 
 .message {
-    margin-bottom: 10px;
-    padding: 12px;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
     border-radius: 8px;
-    font-size: 0.95em;
-    line-height: 1.4;
+    font-size: 0.9375rem;
+    line-height: 1.5;
 }
 
 .message.user {
-    background: #e3f2fd;
-    margin-left: 20px;
-    border-left: 4px solid #2196f3;
+    background: #eff6ff;
+    border-left: 3px solid var(--primary);
 }
 
 .message.bot {
-    background: #f3e5f5;
-    margin-right: 20px;
-    border-left: 4px solid #9c27b0;
+    background: var(--surface);
+    border-left: 3px solid var(--text-secondary);
 }
 
 .message strong {
     font-weight: 600;
-    color: #333;
 }
 
-/* Server Status */
-.server-status {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 10px 20px;
-    border-radius: 25px;
-    font-weight: 600;
-    z-index: 1000;
-    font-size: 0.9em;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+/* Spectrogram */
+.spectrogram {
+    margin-top: 1rem;
 }
 
-.server-status.connected {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-}
-
-.server-status.disconnected {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-    .main-content {
-        grid-template-columns: 1fr;
-        gap: 20px;
-        padding: 20px;
-    }
-    
-    .header {
-        padding: 20px;
-    }
-    
-    .header h1 {
-        font-size: 2em;
-    }
-    
-    .section {
-        padding: 20px;
-    }
-    
-    .server-status {
-        position: relative;
-        top: auto;
-        right: auto;
-        margin-bottom: 20px;
-        text-align: center;
-    }
-}
-
-@media (max-width: 480px) {
-    body {
-        padding: 10px;
-    }
-    
-    .header h1 {
-        font-size: 1.8em;
-    }
-    
-    .header p {
-        font-size: 1em;
-    }
-    
-    .section {
-        padding: 15px;
-    }
-    
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-        padding: 10px;
-        font-size: 14px;
-    }
-    
-    .btn {
-        padding: 10px 20px;
-        font-size: 14px;
-    }
-}
-
-/* Loading States */
-.loading {
-    opacity: 0.7;
-    pointer-events: none;
-}
-
-.loading::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 20px;
-    height: 20px;
-    margin: -10px 0 0 -10px;
-    border: 2px solid #667eea;
-    border-top: 2px solid transparent;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.spectrogram img {
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
 }
 
 /* Utility Classes */
 .hidden {
-    display: none !important;
+    display: none;
 }
 
-.text-center {
-    text-align: center;
-}
-
-.text-success {
-    color: #155724;
-}
-
-.text-error {
-    color: #721c24;
-}
-
-.text-info {
-    color: #0c5460;
-}
-
-/* Focus States for Accessibility */
-.btn:focus,
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-    outline: 2px solid #667eea;
-    outline-offset: 2px;
-}
-
-/* Print Styles */
-@media print {
-    .server-status,
-    .btn {
-        display: none;
+/* Responsive Design */
+@media (max-width: 768px) {
+    body {
+        padding: 1rem;
     }
-    
-    .container {
-        box-shadow: none;
-        border: 1px solid #ccc;
+
+    .header h1 {
+        font-size: 1.75rem;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .card {
+        padding: 1.25rem;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --primary: #3b82f6;
+        --primary-dark: #2563eb;
+        --bg: #09090b;
+        --surface: #18181b;
+        --text: #fafafa;
+        --text-secondary: #a1a1aa;
+        --border: #27272a;
+        --success: #22c55e;
+        --error: #ef4444;
+    }
+
+    input, select, textarea {
+        color: var(--text);
+    }
+
+    .message.user {
+        background: #1e3a8a;
+    }
+
+    .message.bot {
+        background: var(--surface);
+    }
+
+    .status-message.success {
+        background: #14532d;
+        border-color: #166534;
+        color: #86efac;
+    }
+
+    .status-message.error {
+        background: #7f1d1d;
+        border-color: #991b1b;
+        color: #fca5a5;
+    }
+
+    .status-message.info {
+        background: #1e3a8a;
+        border-color: #1e40af;
+        color: #93c5fd;
     }
 }

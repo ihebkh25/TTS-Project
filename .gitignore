@@ -1,24 +1,23 @@
-# Ignore Rust build artifacts
+# Rust build artifacts
 /target/
 *.rlib
 *.pdb
 
-# Ignore compiled binaries and debug symbols
+# Compiled binaries
 **/*.exe
 **/*.dll
 
-# Ignore model files (large ONNX weights)
+# Model files (large ONNX weights)
 models/**/*.onnx
 models/**/*.onnx.json
+*.onnx
 
-PROJECT_ANALYSIS.md
-tts_project_wiki copy.md
-
+# IDE and OS files
 .DS_Store
 .env
 .idea
+**/.DS_Store
 
-models/.DS_Store
-server/.DS_Store
-tests/.DS_Storetarget/
-*.onnx
+# Documentation
+PROJECT_ANALYSIS.md
+tts_project_wiki copy.md

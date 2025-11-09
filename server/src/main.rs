@@ -9,12 +9,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use llm_core::OpenAiClient;
+use llm_core::{LlmClient, LlmProvider};
 
 #[derive(Clone)]
 struct AppState {
     tts: Arc<tts_core::TtsManager>,
-    llm: Arc<Mutex<OpenAiClient>>,
+    llm: Arc<Mutex<LlmClient>>,
 }
 
 // ---- Basic request/response types ----
@@ -44,16 +44,34 @@ fn main() -> anyhow::Result<()> {
     // Load environment variables from .env file before creating tokio runtime
     dotenv::dotenv().ok();
     
-    // Init LLM client before creating tokio runtime (since it uses blocking client)
-    let llm = OpenAiClient::new("gpt-3.5-turbo")?;
-    let llm = Arc::new(Mutex::new(llm));
-    
     // Create tokio runtime
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async_main(llm))
+    rt.block_on(async_main())
 }
 
-async fn async_main(llm: Arc<Mutex<OpenAiClient>>) -> anyhow::Result<()> {
+async fn async_main() -> anyhow::Result<()> {
+    // Determine LLM provider from environment
+    let provider = std::env::var("LLM_PROVIDER")
+        .ok()
+        .and_then(|p| match p.as_str() {
+            "ollama" => Some(LlmProvider::Ollama),
+            "openai" | _ => Some(LlmProvider::OpenAI),
+        })
+        .unwrap_or(LlmProvider::OpenAI);
+    
+    let model = std::env::var("LLM_MODEL")
+        .unwrap_or_else(|_| match provider {
+            LlmProvider::OpenAI => "gpt-3.5-turbo".to_string(),
+            LlmProvider::Ollama => "llama2".to_string(),
+        });
+    
+    // Init LLM client with optional Qdrant storage
+    let llm = if std::env::var("QDRANT_URL").is_ok() {
+        LlmClient::with_storage(provider, &model, None).await?
+    } else {
+        LlmClient::new(provider, &model)?
+    };
+    let llm = Arc::new(Mutex::new(llm));
     // Init TTS:
     // Try to load models/map.json; if missing, fall back to an empty map
     // so env-based defaults (if you wired them) can still work.
@@ -143,10 +161,12 @@ async fn tts_endpoint(
 #[derive(Deserialize)]
 struct ChatRequest {
     message: String,
+    conversation_id: Option<String>, // Optional conversation ID for history
 }
 #[derive(Serialize)]
 struct ChatResponse {
     reply: String,
+    conversation_id: String, // Return conversation ID for client to use
 }
 
 async fn chat_endpoint(
@@ -154,15 +174,24 @@ async fn chat_endpoint(
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
     let message = req.message.clone();
+    let conversation_id = req.conversation_id.clone();
     let llm = state.llm.clone();
-    let reply = tokio::task::spawn_blocking(move || {
+    let (reply, conv_id) = tokio::task::spawn_blocking(move || {
         let llm = llm.lock().unwrap();
-        llm.chat(&message)
+        // Use or create conversation ID
+        let conv_id = conversation_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let reply = llm.chat_with_history(Some(conv_id.clone()), &message)
+            .map_err(|e| format!("LLM error: {}", e))?;
+        Ok::<_, String>((reply, conv_id))
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Task join error: {}", e)))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(ChatResponse { reply }))
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    
+    Ok(Json(ChatResponse { 
+        reply,
+        conversation_id: conv_id,
+    }))
 }
 
 

@@ -5,7 +5,6 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
-    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -13,10 +12,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+// Note: tower-governor 0.8 has compatibility issues with Axum 0.7
+// Temporarily disabled rate limiting - can be re-enabled with a compatible version
+// use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::{
     cors::CorsLayer,
-    limit::RequestBodyLimitLayer,
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -136,21 +136,14 @@ async fn async_main() -> anyhow::Result<()> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(60);
 
-    info!("Rate limit: {} requests per minute", rate_limit);
-
-    // Build rate limiter
-    let governor_conf = GovernorConfigBuilder::default()
-        .per_second(rate_limit / 60) // Convert per minute to per second
-        .burst_size(rate_limit as u32)
-        .finish()
-        .unwrap();
+    info!("Rate limit: {} requests per minute (currently disabled due to compatibility)", rate_limit);
 
     // Build middleware stack
+    // Note: tower-governor 0.8 has compatibility issues with Axum 0.7
+    // Rate limiting is temporarily disabled - can be re-enabled with a compatible version
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(30)))
-        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024)) // 10MB limit
-        .layer(GovernorLayer::new(governor_conf))
         .layer(cors)
         .into_inner();
 
@@ -306,7 +299,7 @@ pub async fn stream_ws(
     }
 
     ws.on_upgrade(move |mut socket| async move {
-        use axum::extract::ws::{Message, CloseFrame};
+        use axum::extract::ws::Message;
         use futures_util::{SinkExt, StreamExt};
 
         // Synthesize full audio once

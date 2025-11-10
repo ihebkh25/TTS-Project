@@ -1,10 +1,12 @@
 {
   "de_DE": {
-    "config": "models/de_DE/de_DE-mls-medium.onnx.json",
-    "speaker": null
+    "config": "models/de_DE/de_DE-thorsten-medium.onnx.json",
+    "default_speaker": null
   },
   "fr_FR": {
     "config": "models/fr_FR/fr_FR-siwis-medium.onnx.json",
-    "speaker": null
+    "default_speaker": null
   }
 }
+
+

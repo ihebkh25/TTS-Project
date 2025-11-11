@@ -21,3 +21,4 @@ models/**/*.onnx.json
 # Documentation
 PROJECT_ANALYSIS.md
 tts_project_wiki copy.md
+docs/

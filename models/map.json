@@ -6,7 +6,18 @@
   "fr_FR": {
     "config": "models/fr_FR/fr_FR-siwis-medium.onnx.json",
     "default_speaker": null
+  },
+  "nl_NL": {
+    "config": "models/nl_NL/nl_NL-ronnie-medium.onnx.json",
+    "default_speaker": null
+  },
+  "es_ES": {
+    "config": "models/es_ES/es_ES-sharvard-medium.onnx.json",
+    "default_speaker": null
+  },
+  "it_IT": {
+    "config": "models/it_IT/it_IT-paola-medium.onnx.json",
+    "default_speaker": null
   }
 }
-
 

@@ -12,15 +12,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-// Note: tower-governor 0.8 has compatibility issues with Axum 0.7
-// Temporarily disabled rate limiting - can be re-enabled with a compatible version
-// use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
-use tower_http::{
-    cors::CorsLayer,
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
-};
-use tracing::{info, warn};
+use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tracing::{error, info, warn};
+
 use llm_core::{LlmClient, LlmProvider};
 
 use crate::error::ApiError;
@@ -32,7 +26,6 @@ pub struct AppState {
     pub llm: Arc<std::sync::Mutex<LlmClient>>,
 }
 
-// ---- Basic request/response types ----
 #[derive(Deserialize)]
 pub struct TtsRequest {
     text: String,
@@ -69,7 +62,6 @@ pub struct ChatResponse {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -77,111 +69,83 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Load environment variables from .env file
-    dotenv::dotenv().ok();
+    let _ = dotenv::dotenv();
 
     async_main().await
 }
 
 async fn async_main() -> anyhow::Result<()> {
-    info!("Starting TTS server...");
+    info!("Starting TTS/LLM server...");
 
-    // Determine LLM provider from environment
-    let provider = std::env::var("LLM_PROVIDER")
-        .ok()
-        .and_then(|p| match p.as_str() {
-            "ollama" => Some(LlmProvider::Ollama),
-            "openai" | _ => Some(LlmProvider::OpenAI),
-        })
-        .unwrap_or(LlmProvider::OpenAI);
+    let provider_env = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "openai".into());
+    let provider = match provider_env.as_str() {
+        "ollama" => LlmProvider::Ollama,
+        _ => LlmProvider::OpenAI,
+    };
+    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| match provider {
+        LlmProvider::OpenAI => "gpt-3.5-turbo".into(),
+        LlmProvider::Ollama => "llama2".into(),
+    });
 
-    let model = std::env::var("LLM_MODEL")
-        .unwrap_or_else(|_| match provider {
-            LlmProvider::OpenAI => "gpt-3.5-turbo".to_string(),
-            LlmProvider::Ollama => "llama2".to_string(),
-        });
-
-    info!("Using LLM provider: {:?}, model: {}", provider, model);
-
-    // Init LLM client with optional Qdrant storage
-    let llm = if let Ok(qdrant_url) = std::env::var("QDRANT_URL") {
-        if !qdrant_url.is_empty() {
-            info!("Initializing LLM client with Qdrant storage");
-            LlmClient::with_storage(provider, &model, None).await?
+    let llm = if let Ok(url) = std::env::var("QDRANT_URL") {
+        if !url.trim().is_empty() {
+            info!("Initializing LLM with Qdrant at {}", url);
+            Arc::new(std::sync::Mutex::new(LlmClient::with_storage(provider, &model, None).await?))
         } else {
-            info!("Initializing LLM client without storage (QDRANT_URL is empty)");
-            LlmClient::new(provider, &model)?
+            info!("QDRANT_URL empty, using LLM without storage");
+            Arc::new(std::sync::Mutex::new(LlmClient::new(provider, &model)?))
         }
     } else {
-        info!("Initializing LLM client without storage");
-        LlmClient::new(provider, &model)?
+        info!("No QDRANT_URL set, using LLM without storage");
+        Arc::new(std::sync::Mutex::new(LlmClient::new(provider, &model)?))
     };
-    let llm = Arc::new(std::sync::Mutex::new(llm));
 
-    // Init TTS
     info!("Loading TTS models...");
     let tts = Arc::new(
         tts_core::TtsManager::new_from_mapfile("models/map.json")
-            .unwrap_or_else(|_| tts_core::TtsManager::new(std::collections::HashMap::new())),
+            .unwrap_or_else(|e| {
+                warn!("Could not load models/map.json: {e}, using empty map.");
+                tts_core::TtsManager::new(std::collections::HashMap::new())
+            }),
     );
-    info!("Loaded {} TTS models", tts.list_languages().len());
+    info!("Loaded {} TTS voices", tts.list_languages().len());
 
     let state = AppState { tts, llm };
 
-    // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any);
 
-    // Configure rate limiting (requests per minute)
-    let rate_limit = std::env::var("RATE_LIMIT_PER_MINUTE")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(60);
-
-    info!("Rate limit: {} requests per minute (currently disabled due to compatibility)", rate_limit);
-
-    // Build middleware stack
-    // Note: tower-governor 0.8 has compatibility issues with Axum 0.7
-    // Rate limiting is temporarily disabled - can be re-enabled with a compatible version
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(30)))
+        .layer(TimeoutLayer::new(Duration::from_secs(60)))
         .layer(cors)
         .into_inner();
 
-    let app = Router::new()
+    let api = Router::new()
         .route("/health", get(health_check))
+        .route("/healthz", get(health_check))
         .route("/voices", get(list_voices))
         .route("/voices/detail", get(list_voices_detail))
         .route("/tts", post(tts_endpoint))
         .route("/chat", post(chat_endpoint))
-        .route("/stream/:lang/:text", get(stream_ws))
+        .route("/stream/:lang/:text", get(stream_ws));
+
+    let app = Router::new()
+        .merge(api.clone())   // root paths
+        .nest("/api", api)    // /api prefix
         .layer(middleware_stack)
         .with_state(state);
 
-    // Get port from environment variable or default to 8085
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(8085);
-    let addr: SocketAddr = format!("0.0.0.0:{}", port)
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse address: {}", e))?;
+    let port = std::env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8085);
+    let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
 
-    let listener = TcpListener::bind(addr)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to bind to {}: {}. Try a different port by setting PORT environment variable.",
-                addr,
-                e
-            )
-        })?;
+    let listener = TcpListener::bind(addr).await.map_err(|e| {
+        anyhow::anyhow!("Failed to bind {addr}: {e}. Try a different PORT.")
+    })?;
 
-    info!("Server listening on http://{}", addr);
-
+    info!("Server listening on http://{addr}");
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -210,35 +174,24 @@ pub async fn tts_endpoint(
     State(state): State<AppState>,
     Json(req): Json<TtsRequest>,
 ) -> Result<Json<TtsResponse>, ApiError> {
-    // Validate input
     validate_tts_request(&req.text, req.language.as_deref())?;
 
-    // Synthesize and get sample rate from config
     let (samples, sample_rate) = state
         .tts
         .synthesize_with_sample_rate(&req.text, req.language.as_deref(), req.speaker)
         .map_err(ApiError::TtsError)?;
 
-    // Mel spectrogram
     let sample_rate_f32 = sample_rate as f32;
     let frame_size = 1024usize;
     let hop_size = 256usize;
     let n_mels = 80usize;
 
-    let mel = tts_core::TtsManager::audio_to_mel(
-        &samples,
-        sample_rate_f32,
-        frame_size,
-        hop_size,
-        n_mels,
-    );
+    let mel = tts_core::TtsManager::audio_to_mel(&samples, sample_rate_f32, frame_size, hop_size, n_mels);
     let spectrogram_base64 = tts_core::TtsManager::mel_to_png_base64(&mel);
 
-    // WAV (base64)
     let audio_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate)
-        .map_err(|e| ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {}", e)))?;
+        .map_err(|e| ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}")))?;
 
-    // Calculate duration in milliseconds
     let duration_ms = (samples.len() as f32 / sample_rate_f32 * 1000.0) as u64;
 
     Ok(Json(TtsResponse {
@@ -253,30 +206,32 @@ pub async fn chat_endpoint(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ApiError> {
-    // Validate input
     validate_chat_request(&req.message)?;
-
-    // Validate conversation ID if provided
-    if let Some(ref conv_id) = req.conversation_id {
-        validate_conversation_id(conv_id)?;
+    if let Some(ref id) = req.conversation_id {
+        validate_conversation_id(id)?;
     }
 
     let message = req.message.clone();
-    let conversation_id = req.conversation_id.clone();
+    let conv_id = req.conversation_id.clone();
     let llm = state.llm.clone();
 
-    let (reply, conv_id) = tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let llm = llm.lock().unwrap();
-        // Use or create conversation ID
-        let conv_id = conversation_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let reply = llm
-            .chat_with_history(Some(conv_id.clone()), &message)
-            .map_err(|e| ApiError::LlmError(format!("LLM error: {}", e)))?;
-        Ok::<_, ApiError>((reply, conv_id))
+        let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        match llm.chat_with_history(Some(conv_id.clone()), &message) {
+            Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+            Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+        }
     })
-    .await
-    .map_err(|e| ApiError::InternalError(format!("Task join error: {}", e)))?
-    .map_err(|e| e)?;
+    .await;
+
+    let (reply, conv_id) = match result {
+        Ok(res) => res?,
+        Err(join_err) => {
+            error!("Join error in chat task: {join_err}");
+            return Err(ApiError::InternalError(format!("Join error: {join_err}")));
+        }
+    };
 
     Ok(Json(ChatResponse {
         reply,
@@ -284,60 +239,36 @@ pub async fn chat_endpoint(
     }))
 }
 
-// GET /stream/:lang/:text -> websocket that streams (audio_chunk, mel_frame)
 pub async fn stream_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path((lang, text)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    // Validate input
     if let Err(e) = validate_tts_request(&text, Some(&lang)) {
         return ws.on_upgrade(move |mut socket| async move {
             use axum::extract::ws::Message;
-            let error_msg = serde_json::json!({
-                "error": format!("{}", e),
-                "code": 400
-            });
+            let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
             let _ = socket.send(Message::Text(error_msg.to_string())).await;
         });
     }
 
     ws.on_upgrade(move |mut socket| async move {
         use axum::extract::ws::Message;
-
-        // Synthesize full audio once
         let samples = match state.tts.synthesize_blocking(&text, Some(&lang)) {
             Ok(s) => s,
             Err(e) => {
-                warn!("TTS synthesis error: {}", e);
-                let error_msg = serde_json::json!({
-                    "error": format!("TTS error: {}", e),
-                    "code": 500
-                });
-                if let Err(send_err) = socket.send(Message::Text(error_msg.to_string())).await {
-                    warn!("Failed to send error message: {}", send_err);
-                }
-                if let Err(close_err) = socket.close().await {
-                    warn!("Failed to close socket: {}", close_err);
-                }
+                let err_msg = serde_json::json!({ "error": format!("TTS error: {e}"), "code": 500 });
+                let _ = socket.send(Message::Text(err_msg.to_string())).await;
+                let _ = socket.close().await;
                 return;
             }
         };
 
-        // Get sample rate from config for the language
         let sample_rate = match state.tts.config_for(Some(&lang)) {
-            Ok((cfg_path, _)) => {
-                state.tts
-                    .get_sample_rate(&cfg_path)
-                    .unwrap_or(22050) as f32
-            }
-            Err(_) => {
-                warn!("Failed to get sample rate for language: {}, using default", lang);
-                22_050.0f32
-            }
+            Ok((cfg_path, _)) => state.tts.get_sample_rate(&cfg_path).unwrap_or(22050) as f32,
+            Err(_) => 22_050.0f32,
         };
 
-        // Stream mel frames (simple, per-chunk)
         let frame_size = 1024usize;
         let hop_size = 256usize;
         let n_mels = 80usize;
@@ -348,7 +279,6 @@ pub async fn stream_ws(
         let mut offset = 0usize;
         while offset + hop_size <= samples.len() {
             let slice = &samples[offset..offset + hop_size];
-
             let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(slice) {
                 let arr_f64 = ndarray::Array1::from_iter(
                     fft_frame.into_iter().map(|c: num_complex::Complex<f64>| c),
@@ -358,30 +288,18 @@ pub async fn stream_ws(
             } else {
                 vec![0.0f64; n_mels]
             };
-
-            // downcast to f32 for smaller JSON
             let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
             let chunk: Vec<f32> = slice.to_vec();
 
             let msg = serde_json::json!({ "audio": chunk, "mel": mel_frame });
-
             if let Err(e) = socket.send(Message::Text(msg.to_string())).await {
-                warn!("Failed to send WebSocket message: {}", e);
+                warn!("Failed to send WS message: {e}");
                 break;
             }
-
             offset += hop_size;
         }
 
-        // Send completion message
-        let completion_msg = serde_json::json!({ "status": "complete" });
-        if let Err(e) = socket.send(Message::Text(completion_msg.to_string())).await {
-            warn!("Failed to send completion message: {}", e);
-        }
-
-        // Gracefully close the connection
-        if let Err(e) = socket.close().await {
-            warn!("Failed to close WebSocket: {}", e);
-        }
+        let _ = socket.send(Message::Text(serde_json::json!({ "status": "complete" }).to_string())).await;
+        let _ = socket.close().await;
     })
 }

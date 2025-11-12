@@ -1,18 +1,49 @@
 version: '3.8'
 
 services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"  # REST
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"   # expose so you can use it from host too (optional)
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   tts-server:
     build: .
     ports:
       - "8085:8085"
+    depends_on:
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
     environment:
       - PORT=8085
       - RUST_LOG=info
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_MODEL=${LLM_MODEL:-gpt-3.5-turbo}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - QDRANT_URL=${QDRANT_URL}
-      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
+      # Use Ollama instead of OpenAI
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=llama3             # pick the Ollama model you want
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Qdrant gRPC URL (important: use 6334)
+      - QDRANT_URL=http://qdrant:6334
+      # optional tuning
+      - OPENAI_MAX_TOKENS=512        # ignored for Ollama
+      - OPENAI_MAX_RETRIES=0         # ignored for Ollama
     volumes:
       - ./models:/app/models:ro
 
@@ -23,3 +54,6 @@ services:
     depends_on:
       - tts-server
 
+volumes:
+  qdrant_storage:
+  ollama_data:

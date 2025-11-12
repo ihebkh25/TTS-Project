@@ -198,7 +198,12 @@ impl OllamaClient {
         })
     }
     fn get_client(&self) -> &Client {
-        self.client.get_or_init(|| Client::new())
+        self.client.get_or_init(|| {
+            ClientBuilder::new()
+                .timeout(Duration::from_secs(120)) // 2 minutes timeout for model loading and inference
+                .build()
+                .expect("Failed to create HTTP client")
+        })
     }
 }
 impl LlmProviderTrait for OllamaClient {

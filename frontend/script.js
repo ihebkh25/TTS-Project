@@ -15,52 +15,75 @@ let voices = [];
 let voiceDetails = [];
 let currentAudioBlob = null;
 
-// DOM Elements
-const elements = {
-    // Forms
-    ttsForm: document.getElementById('ttsForm'),
-    streamForm: document.getElementById('streamForm'),
-    chatForm: document.getElementById('chatForm'),
-    
-    // Inputs
-    ttsText: document.getElementById('ttsText'),
-    ttsLanguage: document.getElementById('ttsLanguage'),
-    ttsSpeaker: document.getElementById('ttsSpeaker'),
-    streamText: document.getElementById('streamText'),
-    streamLanguage: document.getElementById('streamLanguage'),
-    chatInput: document.getElementById('chatInput'),
-    serverUrl: document.getElementById('serverUrl'),
-    
-    // Buttons
-    ttsBtn: document.getElementById('ttsBtn'),
-    streamBtn: document.getElementById('streamBtn'),
-    chatBtn: document.getElementById('chatBtn'),
-    downloadTtsBtn: document.getElementById('downloadTtsBtn'),
-    clearChatBtn: document.getElementById('clearChatBtn'),
-    exportChatBtn: document.getElementById('exportChatBtn'),
-    
-    // Status and Output
-    ttsStatus: document.getElementById('ttsStatus'),
-    streamStatus: document.getElementById('streamStatus'),
-    chatStatus: document.getElementById('chatStatus'),
-    serverStatus: document.getElementById('serverStatus'),
-    serverInfo: document.getElementById('serverInfo'),
-    
-    // Audio and Media
-    ttsAudio: document.getElementById('ttsAudio'),
-    streamAudio: document.getElementById('streamAudio'),
-    ttsSpectrogram: document.getElementById('ttsSpectrogram'),
-    chatMessages: document.getElementById('chatMessages'),
-    streamProgress: document.getElementById('streamProgress'),
-    
-    // Groups
-    speakerGroup: document.getElementById('speakerGroup'),
-    ttsCharCount: document.getElementById('ttsCharCount')
-};
+// DOM Elements - Initialize after DOM is ready
+let elements = {};
+
+// Initialize DOM elements
+function initElements() {
+    elements = {
+        // Forms
+        ttsForm: document.getElementById('ttsForm'),
+        streamForm: document.getElementById('streamForm'),
+        chatForm: document.getElementById('chatForm'),
+        
+        // Inputs
+        ttsText: document.getElementById('ttsText'),
+        ttsLanguage: document.getElementById('ttsLanguage'),
+        ttsSpeaker: document.getElementById('ttsSpeaker'),
+        streamText: document.getElementById('streamText'),
+        streamLanguage: document.getElementById('streamLanguage'),
+        chatInput: document.getElementById('chatInput'),
+        serverUrl: document.getElementById('serverUrl'),
+        
+        // Buttons
+        ttsBtn: document.getElementById('ttsBtn'),
+        streamBtn: document.getElementById('streamBtn'),
+        chatBtn: document.getElementById('chatBtn'),
+        downloadTtsBtn: document.getElementById('downloadTtsBtn'),
+        clearChatBtn: document.getElementById('clearChatBtn'),
+        exportChatBtn: document.getElementById('exportChatBtn'),
+        
+        // Status and Output
+        ttsStatus: document.getElementById('ttsStatus'),
+        streamStatus: document.getElementById('streamStatus'),
+        chatStatus: document.getElementById('chatStatus'),
+        serverStatus: document.getElementById('serverStatus'),
+        serverInfo: document.getElementById('serverInfo'),
+        
+        // Audio and Media
+        ttsAudio: document.getElementById('ttsAudio'),
+        streamAudio: document.getElementById('streamAudio'),
+        ttsSpectrogram: document.getElementById('ttsSpectrogram'),
+        chatMessages: document.getElementById('chatMessages'),
+        streamProgress: document.getElementById('streamProgress'),
+        
+        // Custom Audio Player
+        ttsAudioPlayer: document.getElementById('ttsAudioPlayer'),
+        ttsPlayPause: document.getElementById('ttsPlayPause'),
+        ttsProgress: document.getElementById('ttsProgress'),
+        ttsWaveform: document.getElementById('ttsWaveform'),
+        ttsDownloadBtn: document.getElementById('ttsDownloadBtn'),
+        ttsCurrentTime: document.querySelector('#ttsAudioPlayer .current-time'),
+        ttsDuration: document.querySelector('#ttsAudioPlayer .duration'),
+        
+        // Groups
+        speakerGroup: document.getElementById('speakerGroup'),
+        ttsCharCount: document.getElementById('ttsCharCount'),
+        
+        // Toast container
+        toastContainer: document.getElementById('toastContainer')
+    };
+}
 
 // Initialize the application
 async function init() {
-    console.log('🎵 TTS Project Frontend Initializing...');
+    console.log('TTS Project Frontend Initializing...');
+    
+    // Initialize DOM elements
+    initElements();
+    
+    // Set up tabs
+    setupTabs();
     
     // Check server status on load
     await checkServerStatus();
@@ -74,7 +97,70 @@ async function init() {
     // Set up character counter
     setupCharacterCounter();
     
-    console.log('✅ Frontend initialized successfully');
+    // Set up custom audio player
+    setupCustomAudioPlayer();
+    
+    console.log('Frontend initialized successfully');
+}
+
+// Tab configuration with titles and descriptions
+const tabConfig = {
+    tts: { title: 'Text-to-Speech', desc: 'Convert text to natural-sounding speech' },
+    stream: { title: 'Real-time Streaming', desc: 'Stream audio in real-time' },
+    chat: { title: 'AI Chat', desc: 'Chat with AI assistant' },
+    server: { title: 'Server Information', desc: 'Server status and configuration' }
+};
+
+// Tab functionality
+function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const pageTitle = document.getElementById('pageTitle');
+    const pageDescription = document.getElementById('pageDescription');
+    
+    // Ensure only the first tab is visible initially
+    tabContents.forEach((content, index) => {
+        if (index === 0) {
+            content.classList.add('active');
+            const firstTab = content.getAttribute('data-tab');
+            if (firstTab && tabConfig[firstTab]) {
+                if (pageTitle) pageTitle.textContent = tabConfig[firstTab].title;
+                if (pageDescription) pageDescription.textContent = tabConfig[firstTab].desc;
+            }
+        } else {
+            content.classList.remove('active');
+        }
+    });
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetTab = button.getAttribute('data-tab');
+            
+            if (!targetTab) return;
+            
+            // Remove active class from all buttons and contents
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Find and activate the corresponding content section
+            const targetContent = document.querySelector(`.tab-content[data-tab="${targetTab}"]`);
+            if (targetContent) {
+                targetContent.classList.add('active');
+                
+                // Update page title and description
+                if (tabConfig[targetTab]) {
+                    if (pageTitle) pageTitle.textContent = tabConfig[targetTab].title;
+                    if (pageDescription) pageDescription.textContent = tabConfig[targetTab].desc;
+                }
+            } else {
+                console.error(`Tab content not found for: ${targetTab}`);
+            }
+        });
+    });
 }
 
 // Load voices from API
@@ -116,9 +202,10 @@ async function loadVoiceDetails() {
 
 // Populate language select elements
 function populateLanguageSelects() {
-    const selects = [elements.ttsLanguage, elements.streamLanguage];
+    const selects = [elements.ttsLanguage, elements.streamLanguage].filter(Boolean);
     
     selects.forEach(select => {
+        if (!select) return;
         select.innerHTML = '<option value="">Select language...</option>';
         
         voices.forEach(voice => {
@@ -148,37 +235,57 @@ function formatLanguageName(code) {
 // Set up event listeners
 function setupEventListeners() {
     // TTS Form Handler
-    elements.ttsForm.addEventListener('submit', handleTtsSubmit);
+    if (elements.ttsForm) {
+        elements.ttsForm.addEventListener('submit', handleTtsSubmit);
+    }
     
     // Language change handler for speaker selection
-    elements.ttsLanguage.addEventListener('change', handleLanguageChange);
+    if (elements.ttsLanguage) {
+        elements.ttsLanguage.addEventListener('change', handleLanguageChange);
+    }
     
     // Streaming Form Handler
-    elements.streamForm.addEventListener('submit', handleStreamSubmit);
+    if (elements.streamForm) {
+        elements.streamForm.addEventListener('submit', handleStreamSubmit);
+    }
     
     // Chat Form Handler
-    elements.chatForm.addEventListener('submit', handleChatSubmit);
+    if (elements.chatForm) {
+        elements.chatForm.addEventListener('submit', handleChatSubmit);
+    }
     
     // Enter key support for chat
-    elements.chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            elements.chatForm.dispatchEvent(new Event('submit'));
-        }
-    });
+    if (elements.chatInput) {
+        elements.chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (elements.chatForm) {
+                    elements.chatForm.dispatchEvent(new Event('submit'));
+                }
+            }
+        });
+    }
     
     // Download button
-    elements.downloadTtsBtn.addEventListener('click', downloadTtsAudio);
+    if (elements.downloadTtsBtn) {
+        elements.downloadTtsBtn.addEventListener('click', downloadTtsAudio);
+    }
     
     // Clear chat button
-    elements.clearChatBtn.addEventListener('click', clearChat);
+    if (elements.clearChatBtn) {
+        elements.clearChatBtn.addEventListener('click', clearChat);
+    }
     
     // Export chat button
-    elements.exportChatBtn.addEventListener('click', exportChat);
+    if (elements.exportChatBtn) {
+        elements.exportChatBtn.addEventListener('click', exportChat);
+    }
 }
 
 // Set up character counter
 function setupCharacterCounter() {
+    if (!elements.ttsText || !elements.ttsCharCount) return;
+    
     elements.ttsText.addEventListener('input', () => {
         const count = elements.ttsText.value.length;
         elements.ttsCharCount.textContent = count;
@@ -189,6 +296,8 @@ function setupCharacterCounter() {
 
 // Handle language change for speaker selection
 function handleLanguageChange() {
+    if (!elements.ttsLanguage || !elements.speakerGroup) return;
+    
     const language = elements.ttsLanguage.value;
     const voiceDetail = voiceDetails.find(v => v.key === language);
     
@@ -206,9 +315,11 @@ function handleLanguageChange() {
 async function handleTtsSubmit(e) {
     e.preventDefault();
     
+    if (!elements.ttsText || !elements.ttsLanguage) return;
+    
     const text = elements.ttsText.value.trim();
     const language = elements.ttsLanguage.value;
-    const speaker = elements.ttsSpeaker.value ? parseInt(elements.ttsSpeaker.value) : null;
+    const speaker = elements.ttsSpeaker?.value ? parseInt(elements.ttsSpeaker.value) : null;
     
     if (!text) {
         showStatus(elements.ttsStatus, 'error', 'Please enter some text to synthesize');
@@ -220,9 +331,10 @@ async function handleTtsSubmit(e) {
         return;
     }
     
-    setButtonState(elements.ttsBtn, true, '🔄 Generating...');
+    setButtonState(elements.ttsBtn, true, 'Generating...');
     showStatus(elements.ttsStatus, 'info', 'Generating speech...');
-    elements.downloadTtsBtn.style.display = 'none';
+    if (elements.downloadTtsBtn) elements.downloadTtsBtn.style.display = 'none';
+    if (elements.ttsAudioPlayer) elements.ttsAudioPlayer.classList.add('hidden');
     
     try {
         const requestBody = { text, language };
@@ -245,12 +357,11 @@ async function handleTtsSubmit(e) {
 
         const data = await response.json();
         
-        // Create and play audio
-        await playAudio(elements.ttsAudio, data.audio_base64);
-        
         // Store audio blob for download
         currentAudioBlob = await base64ToBlob(data.audio_base64, 'audio/wav');
-        elements.downloadTtsBtn.style.display = 'inline-block';
+        
+        // Set up custom audio player
+        await setupAudioPlayer(data.audio_base64);
         
         // Display spectrogram if available
         if (data.spectrogram_base64) {
@@ -258,15 +369,18 @@ async function handleTtsSubmit(e) {
         }
 
         showStatus(elements.ttsStatus, 'success', 
-            `✅ Speech generated successfully!<br>
+            `Speech generated successfully!<br>
              Duration: ${(data.duration_ms / 1000).toFixed(2)}s<br>
              Sample Rate: ${data.sample_rate}Hz`);
+        
+        showToast('success', 'Speech generated successfully!');
 
     } catch (error) {
         console.error('TTS Error:', error);
-        showStatus(elements.ttsStatus, 'error', `❌ Error: ${error.message}`);
+        showStatus(elements.ttsStatus, 'error', `Error: ${error.message}`);
+        showToast('error', `Error: ${error.message}`);
     } finally {
-        setButtonState(elements.ttsBtn, false, '🎵 Generate Speech');
+        setButtonState(elements.ttsBtn, false, 'Generate Speech');
     }
 }
 
@@ -294,21 +408,21 @@ async function handleStreamSubmit(e) {
             currentWebSocket = null;
         }
         isStreaming = false;
-        setButtonState(elements.streamBtn, false, '📡 Start Streaming');
+        setButtonState(elements.streamBtn, false, 'Start Streaming');
         showStatus(elements.streamStatus, 'info', 'Streaming stopped.');
         elements.streamProgress.classList.add('hidden');
         return;
     }
     
-    setButtonState(elements.streamBtn, true, '🔄 Connecting...');
+    setButtonState(elements.streamBtn, true, 'Connecting...');
     showStatus(elements.streamStatus, 'info', 'Connecting to stream...');
     
     try {
         await startWebSocketStream(text, language);
     } catch (error) {
         console.error('Streaming Error:', error);
-        showStatus(elements.streamStatus, 'error', `❌ Error: ${error.message}`);
-        setButtonState(elements.streamBtn, false, '📡 Start Streaming');
+        showStatus(elements.streamStatus, 'error', `Error: ${error.message}`);
+        setButtonState(elements.streamBtn, false, 'Start Streaming');
     }
 }
 
@@ -327,7 +441,7 @@ async function handleChatSubmit(e) {
     addChatMessage('user', message);
     elements.chatInput.value = '';
     
-    setButtonState(elements.chatBtn, true, '🔄 Thinking...');
+    setButtonState(elements.chatBtn, true, 'Thinking...');
     showStatus(elements.chatStatus, 'info', 'Sending message...');
     
     try {
@@ -356,12 +470,14 @@ async function handleChatSubmit(e) {
         
         // Add bot response
         addChatMessage('bot', data.reply || 'No response received');
-        showStatus(elements.chatStatus, 'success', '✅ Message sent successfully!');
+        showStatus(elements.chatStatus, 'success', 'Message sent successfully!');
+        showToast('success', 'Message sent successfully!');
 
     } catch (error) {
         console.error('Chat Error:', error);
         addChatMessage('bot', `Sorry, I'm having trouble connecting to the AI service. ${error.message}`);
-        showStatus(elements.chatStatus, 'error', `❌ Error: ${error.message}`);
+        showStatus(elements.chatStatus, 'error', `Error: ${error.message}`);
+        showToast('error', `Error: ${error.message}`);
     } finally {
         setButtonState(elements.chatBtn, false, 'Send');
     }
@@ -382,8 +498,9 @@ async function startWebSocketStream(text, language) {
 
         ws.onopen = () => {
             isStreaming = true;
-            setButtonState(elements.streamBtn, false, '⏹️ Stop Streaming');
-            showStatus(elements.streamStatus, 'success', '✅ Connected! Streaming audio...');
+            setButtonState(elements.streamBtn, false, 'Stop Streaming');
+            showStatus(elements.streamStatus, 'success', 'Connected! Streaming audio...');
+            showToast('success', 'Streaming started');
             elements.streamProgress.classList.remove('hidden');
         };
 
@@ -407,11 +524,12 @@ async function startWebSocketStream(text, language) {
                     receivedChunks++;
                     updateStreamProgress(receivedChunks);
                 }
-            } catch (error) {
-                console.error('Error parsing WebSocket message:', error);
-                showStatus(elements.streamStatus, 'error', 
-                    `❌ Error processing stream: ${error.message}`);
-            }
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                    showStatus(elements.streamStatus, 'error', 
+                        `Error processing stream: ${error.message}`);
+                    showToast('error', `Stream error: ${error.message}`);
+                }
         };
 
         ws.onclose = () => {
@@ -422,19 +540,22 @@ async function startWebSocketStream(text, language) {
                     playAudio(elements.streamAudio, wavBase64);
                     
                     showStatus(elements.streamStatus, 'success', 
-                        '✅ Streaming complete! Audio ready to play.');
+                        'Streaming complete! Audio ready to play.');
+                    showToast('success', 'Streaming complete!');
                 } catch (error) {
                     console.error('Error converting audio:', error);
                     showStatus(elements.streamStatus, 'error', 
-                        `❌ Error converting audio: ${error.message}`);
+                        `Error converting audio: ${error.message}`);
+                    showToast('error', `Audio conversion error: ${error.message}`);
                 }
             } else if (isStreaming) {
                 showStatus(elements.streamStatus, 'error', 
-                    '❌ No audio data received from stream.');
+                    'No audio data received from stream.');
+                showToast('error', 'No audio data received');
             }
             isStreaming = false;
             currentWebSocket = null;
-            setButtonState(elements.streamBtn, false, '📡 Start Streaming');
+            setButtonState(elements.streamBtn, false, 'Start Streaming');
             elements.streamProgress.classList.add('hidden');
             resolve();
         };
@@ -442,10 +563,11 @@ async function startWebSocketStream(text, language) {
         ws.onerror = (error) => {
             console.error('WebSocket Error:', error);
             showStatus(elements.streamStatus, 'error', 
-                `❌ WebSocket error: Connection failed`);
+                `WebSocket error: Connection failed`);
+            showToast('error', 'WebSocket connection failed');
             isStreaming = false;
             currentWebSocket = null;
-            setButtonState(elements.streamBtn, false, '📡 Start Streaming');
+            setButtonState(elements.streamBtn, false, 'Start Streaming');
             elements.streamProgress.classList.add('hidden');
             reject(error);
         };
@@ -527,7 +649,157 @@ function convertF32ArrayToWavBase64(samples, sampleRate) {
     return btoa(binary);
 }
 
-// Audio Playback Functions
+// Custom Audio Player Setup
+function setupCustomAudioPlayer() {
+    if (!elements.ttsPlayPause || !elements.ttsProgress) return;
+    
+    // Play/Pause button
+    elements.ttsPlayPause.addEventListener('click', () => {
+        if (elements.ttsAudio.paused) {
+            elements.ttsAudio.play();
+        } else {
+            elements.ttsAudio.pause();
+        }
+    });
+    
+    // Progress bar
+    elements.ttsProgress.addEventListener('input', (e) => {
+        const time = (e.target.value / 100) * elements.ttsAudio.duration;
+        elements.ttsAudio.currentTime = time;
+    });
+    
+    // Download button
+    if (elements.ttsDownloadBtn) {
+        elements.ttsDownloadBtn.addEventListener('click', downloadTtsAudio);
+    }
+    
+    // Audio events
+    elements.ttsAudio.addEventListener('loadedmetadata', () => {
+        if (elements.ttsDuration) {
+            elements.ttsDuration.textContent = formatTime(elements.ttsAudio.duration);
+        }
+    });
+    
+    elements.ttsAudio.addEventListener('timeupdate', () => {
+        if (elements.ttsProgress) {
+            const progress = (elements.ttsAudio.currentTime / elements.ttsAudio.duration) * 100;
+            elements.ttsProgress.value = progress || 0;
+        }
+        if (elements.ttsCurrentTime) {
+            elements.ttsCurrentTime.textContent = formatTime(elements.ttsAudio.currentTime);
+        }
+    });
+    
+    elements.ttsAudio.addEventListener('play', () => {
+        const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
+        const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
+        if (playIcon) playIcon.classList.add('hidden');
+        if (pauseIcon) pauseIcon.classList.remove('hidden');
+    });
+    
+    elements.ttsAudio.addEventListener('pause', () => {
+        const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
+        const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+    });
+    
+    elements.ttsAudio.addEventListener('ended', () => {
+        elements.ttsAudio.currentTime = 0;
+        const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
+        const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+    });
+}
+
+// Setup audio player with waveform
+async function setupAudioPlayer(base64Data) {
+    try {
+        const audioBlob = await base64ToBlob(base64Data, 'audio/wav');
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Clean up previous URL
+        if (elements.ttsAudio.previousUrl) {
+            URL.revokeObjectURL(elements.ttsAudio.previousUrl);
+        }
+        elements.ttsAudio.previousUrl = audioUrl;
+        
+        elements.ttsAudio.src = audioUrl;
+        elements.ttsAudioPlayer.classList.remove('hidden');
+        
+        // Generate waveform
+        await generateWaveform(audioBlob);
+        
+    } catch (error) {
+        console.error('Audio Setup Error:', error);
+        throw new Error('Failed to setup audio: ' + error.message);
+    }
+}
+
+// Generate waveform visualization
+async function generateWaveform(audioBlob) {
+    try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        const canvas = elements.ttsWaveform;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width = canvas.offsetWidth;
+        const height = canvas.height = canvas.offsetHeight;
+        
+        const data = audioBuffer.getChannelData(0);
+        const step = Math.ceil(data.length / width);
+        const amp = height / 2;
+        
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(0, 0, width, height);
+        
+        ctx.fillStyle = '#6366f1';
+        ctx.beginPath();
+        ctx.moveTo(0, amp);
+        
+        for (let i = 0; i < width; i++) {
+            let min = 1.0;
+            let max = -1.0;
+            
+            for (let j = 0; j < step; j++) {
+                const datum = data[(i * step) + j];
+                if (datum < min) min = datum;
+                if (datum > max) max = datum;
+            }
+            
+            ctx.lineTo(i, (1 + min) * amp);
+            ctx.lineTo(i, (1 + max) * amp);
+        }
+        
+        ctx.lineTo(width, amp);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Add gradient overlay
+        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.8)');
+        gradient.addColorStop(0.5, 'rgba(168, 85, 247, 0.6)');
+        gradient.addColorStop(1, 'rgba(20, 184, 166, 0.8)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+    } catch (error) {
+        console.error('Waveform generation error:', error);
+    }
+}
+
+// Format time helper
+function formatTime(seconds) {
+    if (isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Audio Playback Functions (kept for streaming)
 async function playAudio(audioElement, base64Data) {
     try {
         const audioBlob = await base64ToBlob(base64Data, 'audio/wav');
@@ -574,7 +846,8 @@ async function downloadTtsAudio() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    showStatus(elements.ttsStatus, 'success', '✅ Audio downloaded!');
+    showStatus(elements.ttsStatus, 'success', 'Audio downloaded!');
+    showToast('success', 'Audio downloaded successfully!');
 }
 
 // Spectrogram Display
@@ -589,12 +862,14 @@ function displaySpectrogram(container, base64Data) {
 
 // Chat Functions
 function addChatMessage(sender, message) {
+    if (!elements.chatMessages) return;
+    
     const messageClass = sender === 'user' ? 'user' : 'bot';
-    const senderName = sender === 'user' ? 'You' : 'Bot';
     
     const messageElement = document.createElement('div');
     messageElement.className = `message ${messageClass}`;
-    messageElement.innerHTML = `<strong>${senderName}:</strong> ${escapeHtml(message)}`;
+    // textContent automatically escapes HTML, so escapeHtml is not needed
+    messageElement.textContent = message;
     
     elements.chatMessages.appendChild(messageElement);
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
@@ -602,9 +877,11 @@ function addChatMessage(sender, message) {
 
 // Clear chat
 function clearChat() {
+    if (!elements.chatMessages) return;
+    
     elements.chatMessages.innerHTML = `
         <div class="message bot welcome">
-            <strong>Bot:</strong> Hello! I'm your AI assistant. Ask me anything!
+            Hello! I'm your AI assistant. Ask me anything!
         </div>
     `;
     currentConversationId = null;
@@ -613,6 +890,8 @@ function clearChat() {
 
 // Export chat
 function exportChat() {
+    if (!elements.chatMessages) return;
+    
     const messages = Array.from(elements.chatMessages.querySelectorAll('.message'))
         .map(msg => msg.textContent)
         .join('\n');
@@ -627,7 +906,8 @@ function exportChat() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    showStatus(elements.chatStatus, 'success', '✅ Chat exported!');
+    showStatus(elements.chatStatus, 'success', 'Chat exported!');
+    showToast('success', 'Chat exported successfully!');
 }
 
 // Escape HTML to prevent XSS
@@ -642,20 +922,22 @@ async function checkServerStatus() {
     try {
         const response = await fetch(`${API_BASE}/health`);
         if (response.ok) {
-            updateServerStatus('connected', '🟢 Server Connected');
-            showStatus(elements.serverInfo, 'success', '✅ Server is running and healthy!');
+            updateServerStatus('connected', 'Server Connected');
+            showStatus(elements.serverInfo, 'success', 'Server is running and healthy!');
+            showToast('success', 'Server connected');
         } else {
             throw new Error(`Server returned ${response.status}`);
         }
     } catch (error) {
         console.error('Server Status Error:', error);
-        updateServerStatus('disconnected', '🔴 Server Disconnected');
-        showStatus(elements.serverInfo, 'error', `❌ Server is not responding: ${error.message}`);
+        updateServerStatus('disconnected', 'Server Disconnected');
+        showStatus(elements.serverInfo, 'error', `Server is not responding: ${error.message}`);
+        showToast('error', 'Server connection failed');
     }
 }
 
 async function getVoices() {
-    showStatus(elements.serverInfo, 'info', '🔄 Fetching voices...');
+    showStatus(elements.serverInfo, 'info', 'Fetching voices...');
 
     try {
         const response = await fetch(`${API_BASE}/voices`);
@@ -665,16 +947,16 @@ async function getVoices() {
         
         const voices = await response.json();
         showStatus(elements.serverInfo, 'success', 
-            `✅ Available voices:<br>
+            `Available voices:<br>
              ${voices.map(voice => `• ${formatLanguageName(voice)} (${voice})`).join('<br>')}`);
     } catch (error) {
         console.error('Voices Error:', error);
-        showStatus(elements.serverInfo, 'error', `❌ Error fetching voices: ${error.message}`);
+        showStatus(elements.serverInfo, 'error', `Error fetching voices: ${error.message}`);
     }
 }
 
 async function getVoicesDetail() {
-    showStatus(elements.serverInfo, 'info', '🔄 Fetching voice details...');
+    showStatus(elements.serverInfo, 'info', 'Fetching voice details...');
 
     try {
         const response = await fetch(`${API_BASE}/voices/detail`);
@@ -690,24 +972,95 @@ async function getVoicesDetail() {
         ).join('<br><br>');
         
         showStatus(elements.serverInfo, 'success', 
-            `✅ Voice details:<br><br>${detailsHtml}`);
+            `Voice details:<br><br>${detailsHtml}`);
     } catch (error) {
         console.error('Voice Details Error:', error);
-        showStatus(elements.serverInfo, 'error', `❌ Error fetching voice details: ${error.message}`);
+        showStatus(elements.serverInfo, 'error', `Error fetching voice details: ${error.message}`);
     }
+}
+
+// Toast Notification System
+function showToast(type, message, duration = 5000) {
+    if (!elements.toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const content = document.createElement('div');
+    content.className = 'toast-content';
+    content.textContent = message;
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.addEventListener('click', () => dismissToast(toast));
+    
+    toast.appendChild(content);
+    toast.appendChild(closeBtn);
+    elements.toastContainer.appendChild(toast);
+    
+    // Auto dismiss
+    setTimeout(() => {
+        dismissToast(toast);
+    }, duration);
+}
+
+function dismissToast(toast) {
+    toast.classList.add('fade-out');
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 300);
 }
 
 // Utility Functions
 function setButtonState(button, disabled, text) {
+    if (!button) return;
     button.disabled = disabled;
-    button.textContent = text;
+    
+    const btnText = button.querySelector('.btn-text');
+    const btnSpinner = button.querySelector('.btn-spinner');
+    const sendIcon = button.querySelector('.send-icon');
+    
+    // For chat button, keep icon visible, hide text
+    if (button.id === 'chatBtn') {
+        if (btnSpinner) {
+            if (disabled) {
+                btnSpinner.classList.remove('hidden');
+                if (sendIcon) sendIcon.classList.add('hidden');
+            } else {
+                btnSpinner.classList.add('hidden');
+                if (sendIcon) sendIcon.classList.remove('hidden');
+            }
+        }
+    } else {
+        // For other buttons, use text
+        if (btnText) {
+            btnText.textContent = text;
+        } else {
+            button.textContent = text;
+        }
+        
+        if (btnSpinner) {
+            if (disabled) {
+                btnSpinner.classList.remove('hidden');
+            } else {
+                btnSpinner.classList.add('hidden');
+            }
+        }
+    }
 }
 
 function showStatus(element, type, message) {
+    if (!element) return;
     element.innerHTML = `<div class="status status-${type}">${message}</div>`;
 }
 
 function updateServerStatus(status, text) {
+    if (!elements.serverStatus) return;
+    
     elements.serverStatus.innerHTML = `<span class="status-dot"></span><span>${text}</span>`;
     elements.serverStatus.className = `status-badge ${status}`;
 }

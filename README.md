@@ -96,4 +96,4 @@ docker run -p 8082:80 tts-frontend
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Setup guide
 - **[tests/README.md](tests/README.md)** - Testing docs
-- **[frontend/FRONTEND_GUIDE.md](frontend/FRONTEND_GUIDE.md)** - Frontend setup
+- **[frontend/FRONTEND_GUIDE.md](frontend/docs/FRONTEND_GUIDE.md)** - Frontend setup

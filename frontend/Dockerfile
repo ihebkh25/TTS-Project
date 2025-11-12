@@ -3,7 +3,8 @@ FROM nginx:alpine
 WORKDIR /usr/share/nginx/html
 
 # Copy frontend files
-COPY index.html styles.css script.js ./
+COPY index.html script.js ./
+COPY css/ ./css/
 
 # Configure nginx for CORS
 RUN echo 'server { \

@@ -17,7 +17,7 @@
     --error: #f44;
     --info: #4af;
     --warning: #fa0;
-    
+
     /* Spacing */
     --space-xs: 0.5rem;
     --space-sm: 0.75rem;
@@ -26,13 +26,13 @@
     --space-xl: 2rem;
     --space-2xl: 2.5rem;
     --space-3xl: 3rem;
-    
+
     /* Typography */
     --font-sm: 0.875rem;
     --font-base: 1rem;
     --font-lg: 1.5rem;
     --font-xl: 1.75rem;
-    
+
     /* Layout */
     --sidebar-width: 240px;
     --sidebar-width-mobile: 70px;
@@ -40,7 +40,7 @@
     --radius: 8px;
     --radius-lg: 12px;
     --radius-full: 24px;
-    
+
     /* Transitions */
     --transition: all 0.2s;
 }
@@ -125,7 +125,7 @@ body {
     margin: 0 auto;
     width: 100%;
     padding-bottom: var(--space-xl);
-    direction: rtl; /* Move scrollbar to left */
+    direction: ltr; /* Keep scrollbar on right */
 }
 
 .main-content:has(#chatSection.active) {
@@ -141,18 +141,14 @@ body {
     margin-bottom: 0;
 }
 
-.main-content > * {
-    direction: ltr; /* Reset text direction for content */
-}
-
-/* Custom Scrollbar - Left Positioned */
+/* Custom Scrollbar - Right Positioned */
 .main-content::-webkit-scrollbar {
     width: 8px;
 }
 
 .main-content::-webkit-scrollbar-track {
     background: var(--bg);
-    border-right: 1px solid var(--border);
+    border-left: 1px solid var(--border);
 }
 
 .main-content::-webkit-scrollbar-thumb {
@@ -278,7 +274,7 @@ input, textarea, select {
     color: var(--text);
     padding: var(--space-sm) var(--space-md);
     border-radius: var(--radius-lg);
-    margin-bottom: var(--space-md);
+    margin-bottom: 0;
     font-size: var(--font-base);
     font-family: inherit;
     transition: var(--transition);
@@ -575,4 +571,3 @@ select {
         padding: var(--space-md) var(--space-md) var(--space-lg);
     }
 }
-

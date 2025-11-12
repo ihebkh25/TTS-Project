@@ -4,7 +4,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: var(--space-xl) var(--space-3xl);
+    padding: 0 var(--space-3xl) var(--space-xl);
     margin: 0;
     position: relative;
     overflow: hidden;
@@ -444,7 +444,7 @@
 /* Responsive */
 @media (max-width: 1024px) {
     #chatSection {
-        padding: var(--space-xl) var(--space-lg);
+        padding: 0 var(--space-lg) var(--space-xl);
     }
 
     .chat-controls-floating {
@@ -459,7 +459,7 @@
 
 @media (max-width: 768px) {
     #chatSection {
-        padding: var(--space-lg);
+        padding: 0 var(--space-lg) var(--space-lg);
     }
 
     .chat-controls-floating {
@@ -492,7 +492,7 @@
 
 @media (max-width: 480px) {
     #chatSection {
-        padding: var(--space-md);
+        padding: 0 var(--space-md) var(--space-md);
     }
 
     .chat-controls-floating {

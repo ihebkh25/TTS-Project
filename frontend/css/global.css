@@ -136,14 +136,9 @@ body {
     flex-direction: column;
 }
 
-#chatSection {
-    padding: var(--space-xl) var(--space-3xl);
-    margin: 0;
-    max-width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    position: relative;
+.main-content:has(#chatSection.active) .header {
+    padding: var(--space-xl) var(--space-3xl) var(--space-lg);
+    margin-bottom: 0;
 }
 
 .main-content > * {
@@ -517,6 +512,10 @@ select {
     .main-content {
         padding: var(--space-xl) var(--space-lg);
     }
+
+    .main-content:has(#chatSection.active) .header {
+        padding: var(--space-xl) var(--space-lg) var(--space-lg);
+    }
 }
 
 @media (max-width: 768px) {
@@ -538,6 +537,10 @@ select {
     .main-content {
         padding: var(--space-lg);
         max-width: 100%;
+    }
+
+    .main-content:has(#chatSection.active) .header {
+        padding: var(--space-lg) var(--space-lg) var(--space-lg);
     }
 
     .header {
@@ -566,6 +569,10 @@ select {
 @media (max-width: 480px) {
     .main-content {
         padding: var(--space-md);
+    }
+
+    .main-content:has(#chatSection.active) .header {
+        padding: var(--space-md) var(--space-md) var(--space-lg);
     }
 }
 

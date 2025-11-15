@@ -485,8 +485,17 @@ async function handleTtsSubmit(e) {
 
     } catch (error) {
         console.error('TTS Error:', error);
-        showStatus(elements.ttsStatus, 'error', `Error: ${error.message}`);
-        showToast('error', `Error: ${error.message}`);
+        let errorMsg = error.message;
+        
+        // Handle specific error types
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+            errorMsg = 'Request timed out. Please try again with shorter text.';
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            errorMsg = 'Network error. Please check your connection and try again.';
+        }
+        
+        showStatus(elements.ttsStatus, 'error', `Error: ${errorMsg}`);
+        showToast('error', `Error: ${errorMsg}`);
     } finally {
         setButtonState(elements.ttsBtn, false, 'Generate Speech');
     }
@@ -580,7 +589,8 @@ async function handleChatSubmit(e) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(180000) // 3 minute timeout for LLM
         });
 
         const requestTime = Date.now() - requestStart;
@@ -609,9 +619,18 @@ async function handleChatSubmit(e) {
 
     } catch (error) {
         console.error('Chat Error:', error);
-        addChatMessage('bot', `Sorry, I'm having trouble connecting to the AI service. ${error.message}`);
-        showStatus(elements.chatStatus, 'error', `Error: ${error.message}`);
-        showToast('error', `Error: ${error.message}`);
+        let errorMsg = error.message;
+        
+        // Handle specific error types
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+            errorMsg = 'Request timed out. The AI is taking too long to respond. Please try again.';
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            errorMsg = 'Network error. Please check your connection and try again.';
+        }
+        
+        addChatMessage('bot', `Sorry, I'm having trouble connecting to the AI service. ${errorMsg}`);
+        showStatus(elements.chatStatus, 'error', `Error: ${errorMsg}`);
+        showToast('error', `Error: ${errorMsg}`);
     } finally {
         setButtonState(elements.chatBtn, false, 'Send');
     }
@@ -686,115 +705,158 @@ function visualizeMelFrame(melFrame) {
     });
 }
 
-// WebSocket Streaming Implementation
+// Streaming configuration constants
+const STREAMING_CONFIG = {
+    MAX_AUDIO_SAMPLES: 10_000_000, // ~7.5 minutes at 22kHz (safety limit)
+    MAX_MEL_FRAMES: 50000, // Limit mel frames accumulation
+    RECONNECT_ATTEMPTS: 3,
+    RECONNECT_DELAY: 1000, // ms
+    DEFAULT_SAMPLE_RATE: 22050,
+};
+
+// WebSocket Streaming Implementation with reconnection and memory limits
 async function startWebSocketStream(text, language) {
     const encodedText = encodeURIComponent(text);
     const wsUrl = `${WS_BASE}/stream/${language}/${encodedText}`;
     
     return new Promise((resolve, reject) => {
-        const ws = new WebSocket(wsUrl);
-        currentWebSocket = ws;
+        let reconnectAttempts = 0;
         const audioSamples = [];
         let sampleRate = 22050; // Default sample rate
-        let totalChunks = 0;
         let receivedChunks = 0;
-
+        
         // Initialize spectrogram visualization
         initStreamSpectrogram();
         elements.streamSpectrogram.classList.remove('hidden');
         currentStreamAudioBlob = null; // Reset download blob
+        
+        function connect() {
+            const ws = new WebSocket(wsUrl);
+            currentWebSocket = ws;
 
-        ws.onopen = () => {
-            isStreaming = true;
-            setButtonState(elements.streamBtn, false, 'Stop Streaming');
-            showStatus(elements.streamStatus, 'success', 'Connected! Streaming audio...');
-            showToast('success', 'Streaming started');
-            elements.streamProgress.classList.remove('hidden');
-        };
+            ws.onopen = () => {
+                reconnectAttempts = 0; // Reset on successful connection
+                isStreaming = true;
+                setButtonState(elements.streamBtn, false, 'Stop Streaming');
+                showStatus(elements.streamStatus, 'success', 'Connected! Streaming audio...');
+                showToast('success', 'Streaming started');
+                elements.streamProgress.classList.remove('hidden');
+            };
 
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                
-                // Check for error messages
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-                
-                // Check for completion
-                if (data.status === 'complete') {
-                    return;
-                }
-                
-                // Collect audio samples from the audio array
-                if (data.audio && Array.isArray(data.audio)) {
-                    audioSamples.push(...data.audio);
-                    receivedChunks++;
-                    updateStreamProgress(receivedChunks);
-                }
-                
-                // Visualize mel spectrogram frame in real-time
-                if (data.mel && Array.isArray(data.mel)) {
-                    visualizeMelFrame(data.mel);
-                }
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Check for error messages
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    // Check for completion
+                    if (data.status === 'complete') {
+                        return;
+                    }
+                    
+                    // Collect audio samples from the audio array with memory limit
+                    if (data.audio && Array.isArray(data.audio)) {
+                        // Check memory limit
+                        if (audioSamples.length + data.audio.length > STREAMING_CONFIG.MAX_AUDIO_SAMPLES) {
+                            console.warn('Audio sample limit reached, stopping stream');
+                            showStatus(elements.streamStatus, 'error', 
+                                'Stream too long. Maximum audio length exceeded.');
+                            ws.close();
+                            return;
+                        }
+                        
+                        audioSamples.push(...data.audio);
+                        receivedChunks++;
+                        updateStreamProgress(receivedChunks);
+                    }
+                    
+                    // Visualize mel spectrogram frame in real-time with memory limit
+                    if (data.mel && Array.isArray(data.mel)) {
+                        // Limit mel frames to prevent memory issues
+                        if (streamMelFrames.length < STREAMING_CONFIG.MAX_MEL_FRAMES) {
+                            visualizeMelFrame(data.mel);
+                        }
+                    }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
                     showStatus(elements.streamStatus, 'error', 
                         `Error processing stream: ${error.message}`);
                     showToast('error', `Stream error: ${error.message}`);
                 }
-        };
+            };
 
-        ws.onclose = () => {
-            if (isStreaming && audioSamples.length > 0) {
-                try {
-                    // Convert f32 audio samples to WAV and encode as base64
-                    const wavBase64 = convertF32ArrayToWavBase64(audioSamples, sampleRate);
+            ws.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                // Don't reject immediately, let onclose handle reconnection
+            };
+            
+            ws.onclose = (event) => {
+                // Check if this was an unexpected close (not normal completion)
+                if (isStreaming && audioSamples.length === 0 && reconnectAttempts < STREAMING_CONFIG.RECONNECT_ATTEMPTS) {
+                    // Attempt reconnection
+                    reconnectAttempts++;
+                    showStatus(elements.streamStatus, 'info', 
+                        `Connection lost. Reconnecting... (${reconnectAttempts}/${STREAMING_CONFIG.RECONNECT_ATTEMPTS})`);
                     
-                    // Store blob for download and generate waveform
-                    base64ToBlob(wavBase64, 'audio/wav').then(async blob => {
-                        currentStreamAudioBlob = blob;
-                        // Generate waveform visualization
-                        await generateStreamWaveform(blob);
-                    });
-                    
-                    playAudio(elements.streamAudio, wavBase64);
-                    elements.streamAudioContainer.classList.remove('hidden');
-                    
-                    showStatus(elements.streamStatus, 'success', 
-                        `Streaming complete! Audio ready to play.<br>
-                         Received ${receivedChunks} chunks, ${audioSamples.length} samples total.`);
-                    showToast('success', 'Streaming complete!');
-                } catch (error) {
-                    console.error('Error converting audio:', error);
-                    showStatus(elements.streamStatus, 'error', 
-                        `Error converting audio: ${error.message}`);
-                    showToast('error', `Audio conversion error: ${error.message}`);
+                    setTimeout(() => {
+                        if (isStreaming) {
+                            connect(); // Retry connection
+                        }
+                    }, STREAMING_CONFIG.RECONNECT_DELAY * reconnectAttempts);
+                    return;
                 }
-            } else if (isStreaming) {
-                showStatus(elements.streamStatus, 'error', 
-                    'No audio data received from stream.');
-                showToast('error', 'No audio data received');
-                elements.streamSpectrogram.classList.add('hidden');
-            }
-            isStreaming = false;
-            currentWebSocket = null;
-            setButtonState(elements.streamBtn, false, 'Start Streaming');
-            elements.streamProgress.classList.add('hidden');
-            resolve();
-        };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket Error:', error);
-            showStatus(elements.streamStatus, 'error', 
-                `WebSocket error: Connection failed`);
-            showToast('error', 'WebSocket connection failed');
-            isStreaming = false;
-            currentWebSocket = null;
-            setButtonState(elements.streamBtn, false, 'Start Streaming');
-            elements.streamProgress.classList.add('hidden');
-            reject(error);
-        };
+                
+                // Normal completion or max reconnection attempts reached
+                if (isStreaming && audioSamples.length > 0) {
+                    try {
+                        // Convert f32 audio samples to WAV and encode as base64
+                        const wavBase64 = convertF32ArrayToWavBase64(audioSamples, sampleRate);
+                        
+                        // Store blob for download and generate waveform
+                        base64ToBlob(wavBase64, 'audio/wav').then(async blob => {
+                            currentStreamAudioBlob = blob;
+                            // Generate waveform visualization
+                            await generateStreamWaveform(blob);
+                        });
+                        
+                        playAudio(elements.streamAudio, wavBase64);
+                        elements.streamAudioContainer.classList.remove('hidden');
+                        
+                        showStatus(elements.streamStatus, 'success', 
+                            `Streaming complete! Audio ready to play.<br>
+                             Received ${receivedChunks} chunks, ${audioSamples.length} samples total.`);
+                        showToast('success', 'Streaming complete!');
+                    } catch (error) {
+                        console.error('Error converting audio:', error);
+                        showStatus(elements.streamStatus, 'error', 
+                            `Error converting audio: ${error.message}`);
+                        showToast('error', `Audio conversion error: ${error.message}`);
+                    }
+                } else if (isStreaming) {
+                    if (reconnectAttempts >= STREAMING_CONFIG.RECONNECT_ATTEMPTS) {
+                        showStatus(elements.streamStatus, 'error', 
+                            'Connection failed after multiple retry attempts.');
+                        showToast('error', 'Connection failed');
+                    } else {
+                        showStatus(elements.streamStatus, 'error', 
+                            'No audio data received from stream.');
+                        showToast('error', 'No audio data received');
+                    }
+                    elements.streamSpectrogram.classList.add('hidden');
+                }
+                isStreaming = false;
+                currentWebSocket = null;
+                setButtonState(elements.streamBtn, false, 'Start Streaming');
+                elements.streamProgress.classList.add('hidden');
+                resolve();
+            };
+        }
+        
+        // Start connection
+        connect();
     });
 }
 
@@ -1828,14 +1890,16 @@ function setupVoiceMode() {
     let animationFrameId = null;
     let currentConversationId = null;
     
-    // VAD (Voice Activity Detection) configuration
+    // VAD (Voice Activity Detection) configuration - using constants
     const VAD_CONFIG = {
-        enabled: true, // Enable/disable VAD
+        enabled: true, // Can be made configurable via UI
         silenceThreshold: 30, // Audio level threshold (0-255, lower = more sensitive)
         silenceDuration: 1500, // Milliseconds of silence before auto-stop
         checkInterval: 100, // How often to check audio levels (ms)
         minRecordingDuration: 500, // Minimum recording duration before VAD can trigger (ms)
     };
+    
+    // Note: These could be loaded from localStorage for user preferences
     
     let vadState = {
         lastVoiceTime: null,

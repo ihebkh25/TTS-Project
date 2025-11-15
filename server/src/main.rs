@@ -13,19 +13,25 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing::{error, info, warn};
 use std::sync::atomic::{AtomicU64, Ordering};
+use axum::extract::Request;
+use axum::middleware::Next;
+use axum::response::Response;
 
 use llm_core::{LlmClient, LlmProvider};
 
 use crate::error::ApiError;
 use crate::validation::{validate_chat_request, validate_conversation_id, validate_tts_request};
+use crate::config::ServerConfig;
 
 #[derive(Clone)]
 pub struct AppState {
     pub tts: Arc<tts_core::TtsManager>,
     pub llm: Arc<std::sync::Mutex<LlmClient>>,
     pub request_count: Arc<AtomicU64>,
+    pub config: ServerConfig,
 }
 
 #[derive(Deserialize)]
@@ -119,33 +125,104 @@ async fn async_main() -> anyhow::Result<()> {
     // Initialize start time for uptime calculation
     let _ = START_TIME.get_or_init(|| std::time::Instant::now());
 
+    // Load configuration from environment
+    let config = ServerConfig::from_env();
+    
     let state = AppState { 
         tts, 
         llm,
         request_count: Arc::new(AtomicU64::new(0)),
+        config: config.clone(),
+    };
+    info!("Server configuration loaded: port={}, rate_limit={}/min, llm_timeout={}s", 
+        config.port, config.rate_limit_per_minute, config.llm_timeout_secs);
+    
+    // CORS configuration - environment-aware
+    let cors = if let Some(ref allowed_origins) = config.cors_allowed_origins {
+        // Production: Use specific origins from environment
+        let origins: Vec<_> = allowed_origins
+            .iter()
+            .filter_map(|origin| {
+                origin.parse::<axum::http::HeaderValue>().ok()
+            })
+            .collect();
+        
+        if origins.is_empty() {
+            warn!("CORS_ALLOWED_ORIGINS is empty, falling back to permissive CORS");
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers(tower_http::cors::Any)
+        } else {
+            info!("CORS configured for {} origin(s)", origins.len());
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::list(origins))
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers(tower_http::cors::Any)
+        }
+    } else {
+        // Development: Allow all origins (with warning)
+        warn!("CORS_ALLOWED_ORIGINS not set, allowing all origins (development mode)");
+        CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+            .allow_headers(tower_http::cors::Any)
     };
 
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods(tower_http::cors::Any)
-        .allow_headers(tower_http::cors::Any);
-
+    // Rate limiting configuration
+    let governor_conf = Box::new(
+        GovernorConfigBuilder::default()
+            .per_second(config.rate_limit_per_minute / 60) // Convert per-minute to per-second
+            .burst_size(config.rate_limit_per_minute)
+            .finish()
+            .unwrap(),
+    );
+    
+    info!("Rate limiting: {} requests per minute", config.rate_limit_per_minute);
+    
+    // Request ID middleware for tracing
+    async fn add_request_id(mut request: Request, next: Next) -> Response {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        request.headers_mut().insert(
+            "x-request-id",
+            axum::http::HeaderValue::from_str(&request_id).unwrap(),
+        );
+        let mut response = next.run(request).await;
+        response.headers_mut().insert(
+            "x-request-id",
+            axum::http::HeaderValue::from_str(&request_id).unwrap(),
+        );
+        response
+    }
+    
     let middleware_stack = ServiceBuilder::new()
+        .layer(axum::middleware::from_fn(add_request_id))
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(60)))
+        .layer(GovernorLayer {
+            config: governor_conf,
+        })
+        .layer(TimeoutLayer::new(config.request_timeout()))
         .layer(cors)
         .into_inner();
 
-    let api = Router::new()
+    // Separate routes for metrics (should be protected in production)
+    let public_api = Router::new()
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
-        .route("/metrics", get(metrics_endpoint))
         .route("/voices", get(list_voices))
         .route("/voices/detail", get(list_voices_detail))
         .route("/tts", post(tts_endpoint))
         .route("/chat", post(chat_endpoint))
         .route("/voice-chat", post(voice_chat_endpoint))
         .route("/stream/:lang/:text", get(stream_ws));
+    
+    // Metrics endpoint - consider adding authentication in production
+    let metrics_api = Router::new()
+        .route("/metrics", get(metrics_endpoint));
+    
+    let api = Router::new()
+        .merge(public_api)
+        .merge(metrics_api);
 
     let app = Router::new()
         .merge(api.clone())   // root paths
@@ -153,8 +230,7 @@ async fn async_main() -> anyhow::Result<()> {
         .layer(middleware_stack)
         .with_state(state);
 
-    let port = std::env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8085);
-    let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
+    let addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse()?;
 
     let listener = TcpListener::bind(addr).await.map_err(|e| {
         anyhow::anyhow!("Failed to bind {addr}: {e}. Try a different PORT.")
@@ -302,23 +378,37 @@ pub async fn chat_endpoint(
 
     info!("Chat request received: message length={}, conv_id={:?}", message.len(), conv_id);
 
-    // Optimize: Run LLM in blocking task without timeout (let it complete naturally)
-    // The LLM provider itself may have timeouts, but we don't enforce one here
-    let result = tokio::task::spawn_blocking(move || {
-        let llm = llm.lock().unwrap();
-        let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        match llm.chat_with_history(Some(conv_id.clone()), &message) {
-            Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-            Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
-        }
-    })
+    // Run LLM in blocking task with timeout
+    let result = tokio::time::timeout(
+        state.config.llm_timeout(),
+        tokio::task::spawn_blocking(move || {
+            let llm = llm.lock().unwrap();
+            let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            match llm.chat_with_history(Some(conv_id.clone()), &message) {
+                Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+                Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+            }
+        })
+    )
     .await;
 
     let (reply, conv_id) = match result {
-        Ok(res) => res?,
-        Err(join_err) => {
+        Ok(Ok(Ok(res))) => res?,
+        Ok(Ok(Err(join_err))) => {
             error!("Join error in chat task: {join_err}");
             return Err(ApiError::InternalError(format!("Join error: {join_err}")));
+        }
+        Ok(Err(join_err)) => {
+            error!("Task join error: {join_err}");
+            return Err(ApiError::InternalError(format!("Task join error: {join_err}")));
+        }
+        Err(_) => {
+            let timeout_secs = state.config.llm_timeout().as_secs();
+            error!("LLM request timed out after {} seconds", timeout_secs);
+            return Err(ApiError::LlmError(format!(
+                "Request timed out after {} seconds. Please try again with a shorter message.",
+                timeout_secs
+            )));
         }
     };
 
@@ -390,22 +480,37 @@ pub async fn voice_chat_endpoint(
     };
     let language = req.language.clone().unwrap_or_else(|| default_lang.to_string());
 
-    // Get LLM response
-    let result = tokio::task::spawn_blocking(move || {
-        let llm = llm.lock().unwrap();
-        let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        match llm.chat_with_history(Some(conv_id.clone()), &message) {
-            Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-            Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
-        }
-    })
+    // Get LLM response with timeout
+    let result = tokio::time::timeout(
+        state.config.llm_timeout(),
+        tokio::task::spawn_blocking(move || {
+            let llm = llm.lock().unwrap();
+            let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            match llm.chat_with_history(Some(conv_id.clone()), &message) {
+                Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+                Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+            }
+        })
+    )
     .await;
 
     let (reply, conv_id) = match result {
-        Ok(res) => res?,
-        Err(join_err) => {
+        Ok(Ok(Ok(res))) => res?,
+        Ok(Ok(Err(join_err))) => {
             error!("Join error in voice chat task: {join_err}");
             return Err(ApiError::InternalError(format!("Join error: {join_err}")));
+        }
+        Ok(Err(join_err)) => {
+            error!("Task join error: {join_err}");
+            return Err(ApiError::InternalError(format!("Task join error: {join_err}")));
+        }
+        Err(_) => {
+            let timeout_secs = state.config.llm_timeout().as_secs();
+            error!("LLM request timed out after {} seconds", timeout_secs);
+            return Err(ApiError::LlmError(format!(
+                "Request timed out after {} seconds. Please try again with a shorter message.",
+                timeout_secs
+            )));
         }
     };
 

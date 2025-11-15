@@ -31,7 +31,21 @@ export function initServerTab(elements) {
                 updateServerStatus(elements.serverStatus, 'connected', 'Server Connected');
             }
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'success', 'Server is running and healthy!');
+                const statusHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Server Status</div>
+                            <div class="metric-value" style="color: #10b981;">Connected</div>
+                            <div class="metric-detail">Server is running and healthy!</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Response Time</div>
+                            <div class="metric-value">${healthResponse.response_time_ms ? healthResponse.response_time_ms.toFixed(0) : 'N/A'}ms</div>
+                            <div class="metric-detail">Health check response</div>
+                        </div>
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = statusHtml;
             }
         } catch (error) {
             console.error('[Server Tab] Server Status Error:', {
@@ -43,7 +57,16 @@ export function initServerTab(elements) {
                 updateServerStatus(elements.serverStatus, 'disconnected', 'Server Disconnected');
             }
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'error', `Server is not responding: ${error.message}`);
+                const errorHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Server Status</div>
+                            <div class="metric-value" style="color: #ef4444;">Disconnected</div>
+                            <div class="metric-detail">Server is not responding: ${error.message}</div>
+                        </div>
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = errorHtml;
             }
         }
     }
@@ -141,14 +164,32 @@ export function initServerTab(elements) {
         try {
             const voicesList = await getVoices();
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'success', 
-                    `Available voices:<br>
-                     ${voicesList.map(voice => `• ${formatLanguageName(voice)} (${voice})`).join('<br>')}`);
+                const voicesHtml = `
+                    <div class="metrics-grid">
+                        ${voicesList.map(voice => `
+                            <div class="metric-card">
+                                <div class="metric-label">Voice</div>
+                                <div class="metric-value">${formatLanguageName(voice)}</div>
+                                <div class="metric-detail">${voice}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = voicesHtml;
             }
         } catch (error) {
             console.error('Voices Error:', error);
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'error', `Error fetching voices: ${error.message}`);
+                const errorHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Error</div>
+                            <div class="metric-value" style="color: #ef4444;">Failed</div>
+                            <div class="metric-detail">Error fetching voices: ${error.message}</div>
+                        </div>
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = errorHtml;
             }
         }
     }
@@ -166,20 +207,37 @@ export function initServerTab(elements) {
         
         try {
             const details = await getVoiceDetails();
-            const detailsHtml = details.map(v => 
-                `• <strong>${formatLanguageName(v.key)}</strong> (${v.key})<br>
-                 &nbsp;&nbsp;Config: ${v.config}<br>
-                 &nbsp;&nbsp;Speaker: ${v.speaker !== null ? v.speaker : 'Default'}`
-            ).join('<br><br>');
-            
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'success', 
-                    `Voice details:<br><br>${detailsHtml}`);
+                const detailsHtml = `
+                    <div class="metrics-grid">
+                        ${details.map(v => `
+                            <div class="metric-card">
+                                <div class="metric-label">Voice</div>
+                                <div class="metric-value">${formatLanguageName(v.key)}</div>
+                                <div class="metric-detail">
+                                    <strong>Code:</strong> ${v.key}<br>
+                                    <strong>Config:</strong> ${v.config}<br>
+                                    <strong>Speaker:</strong> ${v.speaker !== null ? v.speaker : 'Default'}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = detailsHtml;
             }
         } catch (error) {
             console.error('Voice Details Error:', error);
             if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'error', `Error fetching voice details: ${error.message}`);
+                const errorHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Error</div>
+                            <div class="metric-value" style="color: #ef4444;">Failed</div>
+                            <div class="metric-detail">Error fetching voice details: ${error.message}</div>
+                        </div>
+                    </div>
+                `;
+                elements.serverInfo.innerHTML = errorHtml;
             }
         }
     }

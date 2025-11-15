@@ -95,6 +95,8 @@ impl OpenAiClient {
         self.client.get_or_init(|| {
             ClientBuilder::new()
                 .timeout(Duration::from_secs(self.timeout_secs))
+                .tcp_keepalive(Duration::from_secs(60)) // Keep connections alive for reuse
+                .pool_max_idle_per_host(10) // Connection pooling for better performance
                 .build()
                 .unwrap()
         })
@@ -201,6 +203,8 @@ impl OllamaClient {
         self.client.get_or_init(|| {
             ClientBuilder::new()
                 .timeout(Duration::from_secs(120)) // 2 minutes timeout for model loading and inference
+                .tcp_keepalive(Duration::from_secs(60)) // Keep connections alive for reuse
+                .pool_max_idle_per_host(10) // Connection pooling for better performance
                 .build()
                 .expect("Failed to create HTTP client")
         })
@@ -209,9 +213,9 @@ impl OllamaClient {
 impl LlmProviderTrait for OllamaClient {
     fn provider_type(&self) -> LlmProvider { LlmProvider::Ollama }
     fn chat(&self, messages: &[Message]) -> Result<String> {
-        #[derive(Serialize)]
+        #[derive(Serialize, Clone)]
         struct Req { model: String, messages: Vec<Msg>, stream: bool }
-        #[derive(Serialize)]
+        #[derive(Serialize, Clone)]
         struct Msg { role: String, content: String }
         #[derive(Deserialize)]
         struct Resp { message: RMsg }
@@ -219,9 +223,28 @@ impl LlmProviderTrait for OllamaClient {
         struct RMsg { content: String }
 
         let url = format!("{}/api/chat", self.base_url);
-        let msgs: Vec<Msg> = messages.iter().map(|m| Msg { role: m.role.clone(), content: m.content.clone() }).collect();
-        let body = Req { model: self.model.clone(), messages: msgs, stream: false };
-        let r = self.get_client().post(&url).json(&body).send()?.error_for_status()?.json::<Resp>()?;
+        
+        // Optimize message preparation - prepare messages once
+        let msgs: Vec<Msg> = messages.iter()
+            .map(|m| Msg { 
+                role: m.role.clone(), 
+                content: m.content.clone() 
+            })
+            .collect();
+        
+        // Use non-streaming for now (blocking client doesn't handle streaming well)
+        // For better performance, consider using async client in the future
+        let body = Req { 
+            model: self.model.clone(), 
+            messages: msgs, 
+            stream: false 
+        };
+        let r = self.get_client()
+            .post(&url)
+            .json(&body)
+            .send()?
+            .error_for_status()?
+            .json::<Resp>()?;
         Ok(r.message.content)
     }
 }
@@ -342,39 +365,70 @@ impl LlmClient {
 
     pub fn chat_with_history(&self, conversation_id: Option<String>, user_message: &str) -> Result<String> {
         let conv_id = conversation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let mut convs = self.conversations.lock().unwrap();
-        let convo = convs.entry(conv_id.clone()).or_insert_with(|| Conversation {
-            id: conv_id.clone(),
-            messages: Vec::new(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        });
+        
+        // Prepare messages while holding lock briefly
+        let (compact_messages, storage_conv) = {
+            let mut convs = self.conversations.lock().unwrap();
+            let convo = convs.entry(conv_id.clone()).or_insert_with(|| Conversation {
+                id: conv_id.clone(),
+                messages: Vec::new(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
 
-        convo.messages.push(Message {
-            role: "user".into(),
-            content: user_message.into(),
-            timestamp: Utc::now(),
-        });
-        convo.updated_at = Utc::now();
+            convo.messages.push(Message {
+                role: "user".into(),
+                content: user_message.into(),
+                timestamp: Utc::now(),
+            });
+            convo.updated_at = Utc::now();
 
-        // send only last 10 turns to the provider
-        let compact = Self::tail(&convo.messages, 10);
-        let reply = self.provider.chat(&compact)?;
+            // send only last 10 turns to the provider (optimized: prepare while lock is held)
+            let compact = Self::tail(&convo.messages, 10);
+            
+            // Clone for storage (if needed) before releasing lock
+            let storage_conv = if self.storage.is_some() {
+                Some(convo.clone())
+            } else {
+                None
+            };
+            
+            (compact, storage_conv)
+        };
+        
+        // Release lock before LLM call to avoid blocking other requests
+        let reply = self.provider.chat(&compact_messages)?;
 
-        convo.messages.push(Message {
-            role: "assistant".into(),
-            content: reply.clone(),
-            timestamp: Utc::now(),
-        });
-        convo.updated_at = Utc::now();
-
-        if let Some(storage) = &self.storage {
-            let conv_clone = convo.clone();
-            let storage_clone = storage.clone();
-            if let Ok(handle) = Handle::try_current() {
-                handle.spawn(async move {
-                    let _ = storage_clone.store_conversation(&conv_clone).await;
+        // Re-acquire lock briefly to update conversation
+        {
+            let mut convs = self.conversations.lock().unwrap();
+            if let Some(convo) = convs.get_mut(&conv_id) {
+                convo.messages.push(Message {
+                    role: "assistant".into(),
+                    content: reply.clone(),
+                    timestamp: Utc::now(),
                 });
+                convo.updated_at = Utc::now();
+            }
+        }
+
+        // Store conversation asynchronously (non-blocking)
+        if let Some(storage) = &self.storage {
+            if let Some(mut conv_clone) = storage_conv {
+                // Update the clone with the assistant message
+                conv_clone.messages.push(Message {
+                    role: "assistant".into(),
+                    content: reply.clone(),
+                    timestamp: Utc::now(),
+                });
+                conv_clone.updated_at = Utc::now();
+                
+                let storage_clone = storage.clone();
+                if let Ok(handle) = Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = storage_clone.store_conversation(&conv_clone).await;
+                    });
+                }
             }
         }
         Ok(reply)

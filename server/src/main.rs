@@ -385,14 +385,20 @@ pub async fn chat_endpoint(
     info!("Chat request received: message length={}, conv_id={:?}", message.len(), conv_id);
 
     // Run LLM in blocking task with timeout
+    // Using spawn_blocking to avoid blocking the async runtime
     let result = tokio::time::timeout(
         state.config.llm_timeout(),
-        tokio::task::spawn_blocking(move || {
-            let llm = llm.lock().unwrap();
-            let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-            match llm.chat_with_history(Some(conv_id.clone()), &message) {
-                Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-                Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+        tokio::task::spawn_blocking({
+            let llm = llm.clone();
+            let message = message.clone();
+            let conv_id = conv_id.clone();
+            move || {
+                let llm = llm.lock().unwrap();
+                let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                match llm.chat_with_history(Some(conv_id.clone()), &message) {
+                    Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+                    Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+                }
             }
         })
     )
@@ -487,14 +493,20 @@ pub async fn voice_chat_endpoint(
     let language = req.language.clone().unwrap_or_else(|| default_lang.to_string());
 
     // Get LLM response with timeout
+    // Using spawn_blocking to avoid blocking the async runtime
     let result = tokio::time::timeout(
         state.config.llm_timeout(),
-        tokio::task::spawn_blocking(move || {
-            let llm = llm.lock().unwrap();
-            let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-            match llm.chat_with_history(Some(conv_id.clone()), &message) {
-                Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-                Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+        tokio::task::spawn_blocking({
+            let llm = llm.clone();
+            let message = message.clone();
+            let conv_id = conv_id.clone();
+            move || {
+                let llm = llm.lock().unwrap();
+                let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                match llm.chat_with_history(Some(conv_id.clone()), &message) {
+                    Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+                    Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+                }
             }
         })
     )

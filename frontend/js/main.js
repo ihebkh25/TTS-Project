@@ -240,7 +240,7 @@ async function loadVoices() {
     } catch (error) {
         console.error('Error loading voices:', error);
         if (elements && elements.serverInfo) {
-            showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
+        showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
         }
     }
 }

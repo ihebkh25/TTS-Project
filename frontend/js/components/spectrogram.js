@@ -169,7 +169,7 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
         
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.8;
+        analyser.smoothingTimeConstant = 0.3; // Lower value = more responsive, less smooth
         audioElement._audioAnalyser = analyser;
         
         // Connect the audio graph
@@ -182,7 +182,7 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
         if (!analyser) {
             analyser = audioContext.createAnalyser();
             analyser.fftSize = 2048;
-            analyser.smoothingTimeConstant = 0.8;
+            analyser.smoothingTimeConstant = 0.8; // Lower value = more responsive, less smooth
             audioElement._audioAnalyser = analyser;
             if (source) {
                 source.connect(analyser);
@@ -221,11 +221,20 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
         // Resume AudioContext if suspended (required by some browsers)
         if (audioContext.state === 'suspended') {
             console.log('[Spectrogram] Resuming suspended AudioContext');
-            audioContext.resume().catch(err => {
+            audioContext.resume().then(() => {
+                // Start animation loop immediately after resuming
+                if (!animationFrame && !audioElement.paused && !audioElement.ended) {
+                    draw();
+                }
+            }).catch(err => {
                 console.error('[Spectrogram] Error resuming AudioContext:', err);
             });
+        } else {
+            // Start animation loop immediately
+            if (!animationFrame && !audioElement.paused && !audioElement.ended) {
+                draw();
+            }
         }
-        draw();
     };
     
     // Handle pause event

@@ -103,13 +103,13 @@ export async function setupTabs(onTabChange = null) {
     if (tabConfig[initialTab]) {
         if (pageTitle) pageTitle.textContent = tabConfig[initialTab].title;
         if (pageDescription) pageDescription.textContent = tabConfig[initialTab].desc;
-    }
+            }
     
     // Activate initial tab
     const initialContent = tabContentContainer.querySelector(`.tab-content[data-tab="${initialTab}"]`);
     if (initialContent) {
         initialContent.classList.add('active');
-    }
+        }
     
     // Setup tab button click handlers
     tabButtons.forEach(button => {

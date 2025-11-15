@@ -122,11 +122,16 @@ export function initTtsTab(elements, state) {
                         visualizeAudioSpectrogram(canvas, elements.ttsAudio);
                     } else {
                         console.log('[TTS] Waiting for audio to load...');
-                        // Wait for audio to load
-                        elements.ttsAudio.addEventListener('loadeddata', () => {
-                            console.log('[TTS] Audio loaded, initializing spectrogram');
+                        // Wait for audio to load - use canplay for better compatibility
+                        let spectrogramInitialized = false;
+                        const loadHandler = () => {
+                            if (spectrogramInitialized) return;
+                            spectrogramInitialized = true;
+                            console.log('[TTS] Audio can play, initializing spectrogram');
                             visualizeAudioSpectrogram(canvas, elements.ttsAudio);
-                        }, { once: true });
+                        };
+                        elements.ttsAudio.addEventListener('canplay', loadHandler, { once: true });
+                        elements.ttsAudio.addEventListener('loadeddata', loadHandler, { once: true });
                     }
                 };
                 

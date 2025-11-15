@@ -13,6 +13,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer};
@@ -574,16 +575,7 @@ pub async fn stream_ws(
             }).to_string().into()
         )).await;
         
-        let samples = match state.tts.synthesize_blocking(&text, Some(&lang)) {
-            Ok(s) => s,
-            Err(e) => {
-                let err_msg = serde_json::json!({ "error": format!("TTS error: {e}"), "code": 500 });
-                let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
-                let _ = socket.close().await;
-                return;
-            }
-        };
-
+        // Get sample rate first
         let sample_rate = match state.tts.config_for(Some(&lang)) {
             Ok((cfg_path, _)) => state.tts.get_sample_rate(&cfg_path).unwrap_or(22050) as f32,
             Err(_) => 22_050.0f32,
@@ -593,22 +585,66 @@ pub async fn stream_ws(
         let hop_size = 256usize;
         let n_mels = 80usize;
         
-        // Calculate total info for metadata
-        let total_samples = samples.len();
-        let total_chunks = (total_samples + hop_size - 1) / hop_size; // Ceiling division
-        let estimated_duration = total_samples as f32 / sample_rate;
+        // Get config path
+        let (cfg_path, _) = match state.tts.config_for(Some(&lang)) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                let err_msg = serde_json::json!({ "error": format!("Config error: {e}"), "code": 500 });
+                let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
+                let _ = socket.close().await;
+                return;
+            }
+        };
         
-        // Send initial metadata message
-        let _ = socket.send(Message::Text(
-            serde_json::json!({
-                "type": "metadata",
-                "sample_rate": sample_rate as u32,
-                "total_samples": total_samples,
-                "estimated_duration": estimated_duration,
-                "total_chunks": total_chunks,
-                "hop_size": hop_size
-            }).to_string().into()
-        )).await;
+        // Create channel for streaming chunks in real-time
+        let (tx, mut rx) = mpsc::channel::<Result<Vec<f32>, String>>(100);
+        
+        // Use spawn_blocking to run synthesis in a separate thread
+        // Stream chunks as they're generated from the iterator
+        let tts_state = state.tts.clone();
+        let text_clone = text.clone();
+        let cfg_path_clone = cfg_path.clone();
+        
+        // Move tx into the blocking task - when task completes, channel will close
+        let synthesis_task = tokio::task::spawn_blocking(move || {
+            // Get synthesizer
+            let (synth_arc, _) = match tts_state.get_or_create_synth(&cfg_path_clone) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(format!("TTS error: {e}")));
+                    return;
+                }
+            };
+            
+            let synth = synth_arc.lock().unwrap();
+            
+            // Create iterator and stream chunks as they come
+            let iter = match synth.synthesize_parallel(text_clone, None) {
+                Ok(i) => i,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(format!("piper synth error: {e}")));
+                    return;
+                }
+            };
+            
+            // Stream chunks from iterator as they're generated
+            for part_result in iter {
+                match part_result {
+                    Ok(samples) => {
+                        let samples_vec = samples.into_vec();
+                        if tx.blocking_send(Ok(samples_vec)).is_err() {
+                            // Receiver dropped, stop processing
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.blocking_send(Err(format!("chunk error: {e}")));
+                        break;
+                    }
+                }
+            }
+            // tx is dropped here when the task completes, closing the channel
+        });
         
         // Send streaming status
         let _ = socket.send(Message::Text(
@@ -619,14 +655,134 @@ pub async fn stream_ws(
             }).to_string().into()
         )).await;
 
+        // Initialize mel spectrogram processors
         let mut stft = mel_spec::prelude::Spectrogram::new(frame_size, hop_size);
         let mut mel = mel_spec::prelude::MelSpectrogram::new(frame_size, sample_rate as f64, n_mels);
-
+        
+        // Buffer for accumulating samples and streaming in chunks
+        let mut sample_buffer: Vec<f32> = Vec::new();
+        let mut total_samples = 0usize;
         let mut offset = 0usize;
         let mut chunk_number = 0usize;
-        while offset + hop_size <= samples.len() {
-            let slice = &samples[offset..offset + hop_size];
-            let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(slice) {
+        let mut metadata_sent = false;
+        let mut synthesis_error = None;
+        
+        // Receive chunks from the synthesis task and stream them immediately
+        let mut synthesis_complete = false;
+        while !synthesis_complete {
+            match rx.recv().await {
+                Some(Ok(chunk_samples)) => {
+                    // Add samples to buffer
+                    sample_buffer.extend_from_slice(&chunk_samples);
+                    total_samples += chunk_samples.len();
+                    
+                    // Stream chunks from buffer while we have enough samples
+                    while sample_buffer.len() >= hop_size {
+                        let chunk: Vec<f32> = sample_buffer.drain(..hop_size).collect();
+                        
+                        // Calculate mel spectrogram frame
+                        let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(&chunk) {
+                            let arr_f64 = ndarray::Array1::from_iter(
+                                fft_frame.into_iter().map(|c: num_complex::Complex<f64>| c),
+                            );
+                            let (flat, _off) = mel.add(&arr_f64).into_raw_vec_and_offset();
+                            flat
+                        } else {
+                            vec![0.0f64; n_mels]
+                        };
+                        let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
+                        
+                        // Send metadata after first chunk (we now have better estimates)
+                        if !metadata_sent {
+                            // Estimate total based on current progress and text length
+                            // Rough estimate: ~100 samples per character (varies by voice)
+                            // Use a conservative estimate that will be updated when complete
+                            let estimated_total = (text.len() * 100).max(total_samples * 3);
+                            let estimated_duration = estimated_total as f32 / sample_rate;
+                            let estimated_chunks = (estimated_total + hop_size - 1) / hop_size;
+                            
+                            let _ = socket.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "metadata",
+                                    "sample_rate": sample_rate as u32,
+                                    "total_samples": estimated_total,
+                                    "estimated_duration": estimated_duration,
+                                    "total_chunks": estimated_chunks,
+                                    "hop_size": hop_size
+                                }).to_string().into()
+                            )).await;
+                            metadata_sent = true;
+                        }
+                        
+                        // Calculate progress metadata
+                        // Progress is based on samples processed (offset) vs samples received so far
+                        // Since we don't know final total until synthesis completes, we use a conservative estimate
+                        chunk_number += 1;
+                        let progress = if total_samples > offset {
+                            // Progress based on what we've processed vs what we've received
+                            // Cap at 95% until we know the final total
+                            ((offset as f32 / total_samples as f32) * 100.0 * 0.95).min(95.0)
+                        } else {
+                            0.0
+                        };
+                        let timestamp = offset as f32 / sample_rate;
+                        let chunk_duration = hop_size as f32 / sample_rate;
+
+                        let msg = serde_json::json!({ 
+                            "type": "chunk",
+                            "audio": chunk, 
+                            "mel": mel_frame,
+                            "chunk": chunk_number,
+                            "total_chunks": 0, // Will be updated when we know total
+                            "progress": progress,
+                            "timestamp": timestamp,
+                            "duration": chunk_duration,
+                            "offset": offset
+                        });
+                        
+                        if let Err(e) = socket.send(Message::Text(msg.to_string().into())).await {
+                            warn!("Failed to send WS message: {e}");
+                            synthesis_complete = true;
+                            break;
+                        }
+                        
+                        offset += hop_size;
+                    }
+                }
+                Some(Err(e)) => {
+                    synthesis_error = Some(e);
+                    break;
+                }
+                None => {
+                    // Channel closed, synthesis complete
+                    break;
+                }
+            }
+        }
+        
+        // Wait for synthesis task to complete (in case it's still running)
+        let _ = synthesis_task.await;
+        
+        // Check for synthesis errors
+        if let Some(err) = synthesis_error {
+            let err_msg = serde_json::json!({ "error": err, "code": 500 });
+            let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+        
+        // Process any remaining samples in buffer (if any)
+        // Note: We don't pad with zeros - we just send what we have if it's significant
+        // The frontend can handle incomplete final chunks
+        if !sample_buffer.is_empty() && sample_buffer.len() >= hop_size / 2 {
+            // Only send if we have at least half a chunk to avoid very small final chunks
+            // Pad to hop_size for consistent processing
+            let mut final_chunk = sample_buffer.drain(..).collect::<Vec<f32>>();
+            while final_chunk.len() < hop_size {
+                final_chunk.push(0.0);
+            }
+            
+            let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(&final_chunk) {
                 let arr_f64 = ndarray::Array1::from_iter(
                     fft_frame.into_iter().map(|c: num_complex::Complex<f64>| c),
                 );
@@ -636,17 +792,16 @@ pub async fn stream_ws(
                 vec![0.0f64; n_mels]
             };
             let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
-            let chunk: Vec<f32> = slice.to_vec();
             
-            // Calculate progress metadata
             chunk_number += 1;
-            let progress = (offset as f32 / total_samples as f32) * 100.0;
+            let progress = 100.0;
             let timestamp = offset as f32 / sample_rate;
             let chunk_duration = hop_size as f32 / sample_rate;
+            let total_chunks = chunk_number;
 
             let msg = serde_json::json!({ 
                 "type": "chunk",
-                "audio": chunk, 
+                "audio": final_chunk, 
                 "mel": mel_frame,
                 "chunk": chunk_number,
                 "total_chunks": total_chunks,
@@ -655,12 +810,23 @@ pub async fn stream_ws(
                 "duration": chunk_duration,
                 "offset": offset
             });
-            if let Err(e) = socket.send(Message::Text(msg.to_string().into())).await {
-                warn!("Failed to send WS message: {e}");
-                break;
-            }
-            offset += hop_size;
+            
+            let _ = socket.send(Message::Text(msg.to_string().into())).await;
         }
+        
+        // Send final metadata update with actual totals
+        let final_duration = total_samples as f32 / sample_rate;
+        let final_chunks = chunk_number;
+        let _ = socket.send(Message::Text(
+            serde_json::json!({
+                "type": "metadata",
+                "sample_rate": sample_rate as u32,
+                "total_samples": total_samples,
+                "estimated_duration": final_duration,
+                "total_chunks": final_chunks,
+                "hop_size": hop_size
+            }).to_string().into()
+        )).await;
 
         let _ = socket.send(Message::Text(
             serde_json::json!({ 

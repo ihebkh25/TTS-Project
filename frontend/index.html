@@ -249,10 +249,12 @@
             </div>
             <div class="button-group">
                 <button class="btn btn-secondary" onclick="checkServerStatus()" type="button">Check Status</button>
+                <button class="btn btn-secondary" onclick="getServerMetrics()" type="button">Get Metrics</button>
                 <button class="btn btn-secondary" onclick="getVoices()" type="button">Get Voices</button>
                 <button class="btn btn-secondary" onclick="getVoicesDetail()" type="button">Voice Details</button>
             </div>
             <div id="serverInfo" class="status-container"></div>
+            <div id="serverMetrics" class="metrics-container hidden" style="margin-top: var(--space-md);"></div>
         </section>
     </main>
 </div>

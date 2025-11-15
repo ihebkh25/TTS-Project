@@ -14,6 +14,7 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use llm_core::{LlmClient, LlmProvider};
 
@@ -24,6 +25,7 @@ use crate::validation::{validate_chat_request, validate_conversation_id, validat
 pub struct AppState {
     pub tts: Arc<tts_core::TtsManager>,
     pub llm: Arc<std::sync::Mutex<LlmClient>>,
+    pub request_count: Arc<AtomicU64>,
 }
 
 #[derive(Deserialize)]
@@ -114,7 +116,14 @@ async fn async_main() -> anyhow::Result<()> {
     );
     info!("Loaded {} TTS voices", tts.list_languages().len());
 
-    let state = AppState { tts, llm };
+    // Initialize start time for uptime calculation
+    let _ = START_TIME.get_or_init(|| std::time::Instant::now());
+
+    let state = AppState { 
+        tts, 
+        llm,
+        request_count: Arc::new(AtomicU64::new(0)),
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -130,6 +139,7 @@ async fn async_main() -> anyhow::Result<()> {
     let api = Router::new()
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
+        .route("/metrics", get(metrics_endpoint))
         .route("/voices", get(list_voices))
         .route("/voices/detail", get(list_voices_detail))
         .route("/tts", post(tts_endpoint))
@@ -159,6 +169,71 @@ pub async fn health_check() -> &'static str {
     "ok"
 }
 
+#[derive(Serialize)]
+pub struct MetricsResponse {
+    pub cpu_usage_percent: f32,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub memory_usage_percent: f32,
+    pub request_count: u64,
+    pub uptime_seconds: u64,
+    pub system_load: Option<f64>,
+}
+
+static START_TIME: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+pub async fn metrics_endpoint(State(state): State<AppState>) -> Json<MetricsResponse> {
+    let mut system = sysinfo::System::new();
+    system.refresh_cpu();
+    system.refresh_memory();
+    
+    // Get CPU usage (average across all cores)
+    let cpu_usage = system.global_cpu_info().cpu_usage();
+    
+    // Get memory information
+    let memory_used = system.used_memory();
+    let memory_total = system.total_memory();
+    let memory_usage_percent = if memory_total > 0 {
+        (memory_used as f64 / memory_total as f64 * 100.0) as f32
+    } else {
+        0.0
+    };
+    
+    // Get request count
+    let request_count = state.request_count.load(Ordering::Relaxed);
+    
+    // Get uptime
+    let uptime = START_TIME.get()
+        .map(|start| start.elapsed().as_secs())
+        .unwrap_or(0);
+    
+    // Get system load (Unix-like systems only)
+    let system_load = {
+        #[cfg(unix)]
+        {
+            use std::fs;
+            if let Ok(loadavg) = fs::read_to_string("/proc/loadavg") {
+                loadavg.split_whitespace().next()
+                    .and_then(|s| s.parse::<f64>().ok())
+            } else {
+                None
+            }
+        }
+        #[cfg(not(unix))]
+        None
+    };
+    
+    Json(MetricsResponse {
+        cpu_usage_percent: cpu_usage,
+        memory_used_mb: memory_used / 1024 / 1024, // Convert bytes to MB
+        memory_total_mb: memory_total / 1024 / 1024,
+        memory_usage_percent,
+        request_count,
+        uptime_seconds: uptime,
+        system_load,
+    })
+}
+
 pub async fn list_voices(State(state): State<AppState>) -> Json<Vec<String>> {
     Json(state.tts.list_languages())
 }
@@ -179,6 +254,7 @@ pub async fn tts_endpoint(
     State(state): State<AppState>,
     Json(req): Json<TtsRequest>,
 ) -> Result<Json<TtsResponse>, ApiError> {
+    state.request_count.fetch_add(1, Ordering::Relaxed);
     validate_tts_request(&req.text, req.language.as_deref())?;
 
     let (samples, sample_rate) = state
@@ -211,6 +287,7 @@ pub async fn chat_endpoint(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ApiError> {
+    state.request_count.fetch_add(1, Ordering::Relaxed);
     let start_time = std::time::Instant::now();
     
     validate_chat_request(&req.message)?;
@@ -296,6 +373,7 @@ pub async fn voice_chat_endpoint(
     State(state): State<AppState>,
     Json(req): Json<VoiceChatRequest>,
 ) -> Result<Json<VoiceChatResponse>, ApiError> {
+    state.request_count.fetch_add(1, Ordering::Relaxed);
     validate_chat_request(&req.message)?;
     if let Some(ref id) = req.conversation_id {
         validate_conversation_id(id)?;

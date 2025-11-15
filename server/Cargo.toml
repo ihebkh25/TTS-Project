@@ -21,6 +21,7 @@ num-complex = "0.4"
 futures-util = "0.3"
 dotenv = "0.15"
 uuid = { version = "1.0", features = ["v4"] }
+sysinfo = "0.30"
 tts_core = { path = "../tts_core" }
 llm_core = { path = "../llm_core" }
 

@@ -77,6 +77,7 @@ function initElements() {
         streamSpectrogramCanvas: document.getElementById('streamSpectrogramCanvas'),
         chatMessages: document.getElementById('chatMessages'),
         streamProgress: document.getElementById('streamProgress'),
+        serverMetrics: document.getElementById('serverMetrics'),
         
         // Custom Audio Player
         ttsAudioPlayer: document.getElementById('ttsAudioPlayer'),
@@ -2531,8 +2532,88 @@ function setupVoiceMode() {
     }
 }
 
+// Get server metrics
+async function getServerMetrics() {
+    if (elements.serverMetrics) {
+        elements.serverMetrics.classList.remove('hidden');
+    }
+    showStatus(elements.serverInfo, 'info', 'Fetching server metrics...');
+
+    try {
+        const response = await fetch(`${API_BASE}/metrics`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const metrics = await response.json();
+        
+        // Format uptime
+        const uptimeHours = Math.floor(metrics.uptime_seconds / 3600);
+        const uptimeMinutes = Math.floor((metrics.uptime_seconds % 3600) / 60);
+        const uptimeSeconds = metrics.uptime_seconds % 60;
+        const uptimeStr = `${uptimeHours}h ${uptimeMinutes}m ${uptimeSeconds}s`;
+        
+        // Format system load
+        const loadStr = metrics.system_load 
+            ? metrics.system_load.toFixed(2) 
+            : 'N/A';
+        
+        // Create metrics display
+        const metricsHtml = `
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">CPU Usage</div>
+                    <div class="metric-value">${metrics.cpu_usage_percent.toFixed(1)}%</div>
+                    <div class="metric-bar">
+                        <div class="metric-bar-fill" style="width: ${Math.min(100, metrics.cpu_usage_percent)}%; background: ${metrics.cpu_usage_percent > 80 ? '#ef4444' : metrics.cpu_usage_percent > 60 ? '#f59e0b' : '#10b981'};"></div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Memory Usage</div>
+                    <div class="metric-value">${metrics.memory_usage_percent.toFixed(1)}%</div>
+                    <div class="metric-detail">${metrics.memory_used_mb} MB / ${metrics.memory_total_mb} MB</div>
+                    <div class="metric-bar">
+                        <div class="metric-bar-fill" style="width: ${Math.min(100, metrics.memory_usage_percent)}%; background: ${metrics.memory_usage_percent > 80 ? '#ef4444' : metrics.memory_usage_percent > 60 ? '#f59e0b' : '#10b981'};"></div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Requests</div>
+                    <div class="metric-value">${metrics.request_count.toLocaleString()}</div>
+                    <div class="metric-detail">Since server start</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Uptime</div>
+                    <div class="metric-value">${uptimeStr}</div>
+                    <div class="metric-detail">${metrics.uptime_seconds.toLocaleString()} seconds</div>
+                </div>
+                ${metrics.system_load ? `
+                <div class="metric-card">
+                    <div class="metric-label">System Load</div>
+                    <div class="metric-value">${loadStr}</div>
+                    <div class="metric-detail">1-minute average</div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        if (elements.serverMetrics) {
+            elements.serverMetrics.innerHTML = metricsHtml;
+        }
+        
+        showStatus(elements.serverInfo, 'success', 'Server metrics retrieved successfully!');
+        showToast('success', 'Metrics updated');
+    } catch (error) {
+        console.error('Metrics Error:', error);
+        showStatus(elements.serverInfo, 'error', `Error fetching metrics: ${error.message}`);
+        if (elements.serverMetrics) {
+            elements.serverMetrics.classList.add('hidden');
+        }
+    }
+}
+
 // Global Functions (for HTML onclick handlers)
 window.checkServerStatus = checkServerStatus;
+window.getServerMetrics = getServerMetrics;
 window.getVoices = getVoices;
 window.getVoicesDetail = getVoicesDetail;
 

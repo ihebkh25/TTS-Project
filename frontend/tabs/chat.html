@@ -1,0 +1,89 @@
+<!-- AI Chat Section -->
+<section class="tab-content" id="chatSection" data-tab="chat">
+    <div class="chat-controls-floating">
+        <button class="btn-icon" id="clearChatBtn" title="Clear Chat" aria-label="Clear Chat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+        </button>
+        <button class="btn-icon" id="exportChatBtn" title="Export Chat" aria-label="Export Chat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        </button>
+    </div>
+
+    <div class="chat-messages-container">
+        <div class="chat-messages" id="chatMessages">
+            <div class="message-wrapper">
+                <div class="message-container bot">
+                    <div class="message bot welcome">
+                        👋 Hello! I'm your AI assistant. Ask me anything!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form id="chatForm" class="chat-form">
+        <!-- Text Input Mode -->
+        <div class="chat-form-input-wrapper" id="textInputWrapper">
+            <button type="button" class="btn-icon chat-voice-toggle-btn" id="voiceModeToggleBtn" aria-label="Use voice mode" title="Use voice mode">
+                <svg class="voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+            <div class="chat-input-container">
+                <input
+                        type="text"
+                        id="chatInput"
+                        name="message"
+                        placeholder="Type your message..."
+                        required
+                        autocomplete="off"
+                        maxlength="2000"
+                >
+                <!-- Compact spectrogram inside input when recording -->
+                <canvas id="voiceInputSpectrogram" class="voice-input-spectrogram hidden"></canvas>
+            </div>
+            <button type="submit" class="btn btn-primary chat-send-btn" id="chatBtn" aria-label="Send message">
+                <svg class="send-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span class="btn-spinner hidden"></span>
+            </button>
+        </div>
+        
+        <!-- Compact Voice Mode Controls -->
+        <div class="voice-mode-controls hidden" id="voiceModeControls">
+            <div class="voice-mode-controls-row">
+                <div class="voice-mode-language-compact">
+                    <label for="voiceModeLanguage" class="voice-language-label-compact">Language:</label>
+                    <select id="voiceModeLanguage" class="voice-language-select-compact" name="language">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-icon voice-mode-close-compact" id="exitVoiceModeBtn" aria-label="Exit voice mode" title="Exit voice mode">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="voice-mode-status-compact" id="voiceModeStatusCompact">
+                <span class="voice-mode-status-text">Click microphone to start recording</span>
+                <span class="voice-mode-vad-hint">Auto-stop after 1.5s silence</span>
+            </div>
+        </div>
+        
+        <div id="chatStatus" class="status-container"></div>
+    </form>
+</section>
+

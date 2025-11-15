@@ -1,0 +1,45 @@
+<!-- Streaming Section -->
+<section class="tab-content" id="streamSection" data-tab="stream">
+    <h2>Real-time Streaming</h2>
+    <form id="streamForm">
+        <div class="form-group">
+            <label for="streamText">Text to Stream</label>
+            <textarea id="streamText" name="text" placeholder="Enter text for real-time streaming..." required rows="3">Hello World, this is streaming audio!</textarea>
+        </div>
+        <div class="form-group">
+            <label for="streamLanguage">Language</label>
+            <select id="streamLanguage" name="language" required>
+                <option value="">Loading voices...</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary" id="streamBtn">
+            <span class="btn-text">Start Streaming</span>
+            <span class="btn-spinner hidden"></span>
+        </button>
+    </form>
+    <div id="streamStatus" class="status-container"></div>
+    <div id="streamProgress" class="progress-bar hidden">
+        <div class="progress-fill"></div>
+    </div>
+    <div id="streamSpectrogram" class="spectrogram-container hidden">
+        <div class="spectrogram-wrapper">
+            <h4>Real-time Mel Spectrogram:</h4>
+            <canvas id="streamSpectrogramCanvas" class="spectrogram-canvas"></canvas>
+        </div>
+    </div>
+    <div id="streamAudioContainer" class="hidden">
+        <div class="audio-waveform-container" style="margin-bottom: var(--space-sm);">
+            <canvas id="streamWaveform" class="audio-waveform"></canvas>
+        </div>
+        <audio id="streamAudio" class="audio-player" controls></audio>
+        <button class="btn btn-secondary" id="streamDownloadBtn" style="margin-top: var(--space-sm);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Audio
+        </button>
+    </div>
+</section>
+

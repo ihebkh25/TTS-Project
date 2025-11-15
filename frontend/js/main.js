@@ -22,6 +22,7 @@ let currentStreamAudioBlob = null;
 let currentConversationId = null;
 let isStreaming = false;
 let currentWebSocket = null;
+const initializedTabs = new Set(); // Track initialized tabs
 
 // State management functions
 function setCurrentAudioBlob(blob) {
@@ -64,15 +65,55 @@ async function init() {
         console.log('[Main] DOM elements initialized:', Object.keys(elements).length, 'elements');
         
         updateLoadingStatus('Setting up tabs...');
-        // Set up tabs
-        setupTabs((tabName, tabContent) => {
+        // Set up tabs (this will load tab HTML files)
+        await setupTabs(async (tabName, tabContent) => {
+            // Re-initialize elements after tab content is loaded
+            elements = initElements();
+            
+            // Only initialize if not already initialized
+            if (initializedTabs.has(tabName)) {
+                return;
+            }
+            
             if (tabName === 'chat') {
+                // Initialize chat tab
+                const chatState = {
+                    get currentConversationId() { return currentConversationId; },
+                    set currentConversationId(value) { currentConversationId = value; },
+                    setCurrentConversationId
+                };
+                initChatTab(elements, chatState);
+                initializedTabs.add(tabName);
                 setTimeout(() => {
                     scrollChatToBottom(elements.chatMessages);
                 }, 100);
             }
             if (tabName === 'server') {
-                // Server tab will check status on initialization
+                // Initialize server tab
+                initServerTab(elements);
+                initializedTabs.add(tabName);
+            }
+            if (tabName === 'tts') {
+                // Initialize TTS tab
+                const ttsState = {
+                    setCurrentAudioBlob,
+                    voiceDetails
+                };
+                initTtsTab(elements, ttsState);
+                setupCustomAudioPlayer(elements);
+                initializedTabs.add(tabName);
+            }
+            if (tabName === 'stream') {
+                // Initialize stream tab
+                const streamState = {
+                    get isStreaming() { return isStreaming; },
+                    set isStreaming(value) { isStreaming = value; },
+                    get currentWebSocket() { return currentWebSocket; },
+                    set currentWebSocket(value) { currentWebSocket = value; },
+                    setCurrentStreamAudioBlob
+                };
+                initStreamTab(elements, streamState);
+                initializedTabs.add(tabName);
             }
         });
         
@@ -84,35 +125,19 @@ async function init() {
         // Load voices dynamically (must be before tab initialization for voiceDetails)
         await loadVoices();
         
+        // Initialize initial tab (tts) after tabs are loaded
+        // Re-initialize elements after tab content is loaded
+        elements = initElements();
+        
         // Set up custom audio player
         setupCustomAudioPlayer(elements);
         
-        // Initialize tab modules
+        // Initialize initial tab modules (tts is loaded by default)
         const ttsState = {
             setCurrentAudioBlob,
             voiceDetails
         };
         initTtsTab(elements, ttsState);
-        
-        // Stream state with getters/setters for reactivity
-        const streamState = {
-            get isStreaming() { return isStreaming; },
-            set isStreaming(value) { isStreaming = value; },
-            get currentWebSocket() { return currentWebSocket; },
-            set currentWebSocket(value) { currentWebSocket = value; },
-            setCurrentStreamAudioBlob
-        };
-        initStreamTab(elements, streamState);
-        
-        // Chat state with getters/setters for reactivity
-        const chatState = {
-            get currentConversationId() { return currentConversationId; },
-            set currentConversationId(value) { currentConversationId = value; },
-            setCurrentConversationId
-        };
-        initChatTab(elements, chatState);
-        
-        const serverTab = initServerTab(elements);
         
         updateLoadingStatus('Setting up handlers...');
         // Set up download button handlers

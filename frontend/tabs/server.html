@@ -1,0 +1,17 @@
+<!-- Server Info Section -->
+<section class="tab-content" id="serverSection" data-tab="server">
+    <h2>Server Information</h2>
+    <div class="form-group">
+        <label for="serverUrl">Server URL</label>
+        <input type="text" id="serverUrl" value="http://localhost:8085" readonly class="input-readonly">
+    </div>
+    <div class="button-group">
+        <button class="btn btn-secondary" onclick="checkServerStatus()" type="button">Check Status</button>
+        <button class="btn btn-secondary" onclick="getServerMetrics()" type="button">Get Metrics</button>
+        <button class="btn btn-secondary" onclick="getVoices()" type="button">Get Voices</button>
+        <button class="btn btn-secondary" onclick="getVoicesDetail()" type="button">Voice Details</button>
+    </div>
+    <div id="serverInfo" class="metrics-container"></div>
+    <div id="serverMetrics" class="metrics-container hidden"></div>
+</section>
+

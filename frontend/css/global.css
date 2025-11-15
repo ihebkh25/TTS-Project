@@ -128,6 +128,7 @@ body {
     direction: ltr; /* Keep scrollbar on right */
 }
 
+/* Chat tab special layout - full height */
 .main-content:has(#chatSection.active) {
     padding: 0;
     overflow: hidden;
@@ -141,6 +142,11 @@ body {
     padding: var(--space-xl) var(--space-3xl) var(--space-lg);
     margin-bottom: 0;
     flex-shrink: 0;
+}
+
+/* Chat section should not have padding when active (handled by main-content) */
+.main-content:has(#chatSection.active) #chatSection {
+    padding: 0;
 }
 
 /* Custom Scrollbar - Right Positioned */
@@ -260,10 +266,26 @@ body {
 /* Tabs */
 .tab-content {
     display: none;
+    /* Padding is handled by main-content, but we ensure consistent spacing */
+    box-sizing: border-box;
 }
 
 .tab-content.active {
     display: block !important;
+}
+
+/* Ensure only one tab is visible at a time */
+.tab-content:not(.active) {
+    display: none !important;
+}
+
+/* Consistent heading styles in tabs */
+.tab-content h2 {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-2xl);
+    color: var(--text);
+    margin-top: 0;
 }
 
 

@@ -14,6 +14,16 @@ export function initServerTab(elements) {
     // Check server status
     async function checkServerStatus() {
         console.log('[Server Tab] Checking server status...');
+        
+        // Clear other displays
+        if (elements.serverInfo) {
+            elements.serverInfo.innerHTML = '';
+        }
+        if (elements.serverMetrics) {
+            elements.serverMetrics.classList.add('hidden');
+            elements.serverMetrics.innerHTML = '';
+        }
+        
         try {
             const healthResponse = await checkServerHealth();
             console.log('[Server Tab] Server health check passed:', healthResponse);
@@ -40,11 +50,14 @@ export function initServerTab(elements) {
     
     // Display server metrics
     async function displayServerMetrics() {
+        // Clear other displays
+        if (elements.serverInfo) {
+            elements.serverInfo.innerHTML = '';
+        }
+        
+        // Show metrics container
         if (elements.serverMetrics) {
             elements.serverMetrics.classList.remove('hidden');
-        }
-        if (elements.serverInfo) {
-            showStatus(elements.serverInfo, 'info', 'Fetching server metrics...');
         }
         
         try {
@@ -102,25 +115,27 @@ export function initServerTab(elements) {
             if (elements.serverMetrics) {
                 elements.serverMetrics.innerHTML = metricsHtml;
             }
-            
-            if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'success', 'Server metrics retrieved successfully!');
-            }
         } catch (error) {
             console.error('Metrics Error:', error);
-            if (elements.serverInfo) {
-                showStatus(elements.serverInfo, 'error', `Error fetching metrics: ${error.message}`);
-            }
             if (elements.serverMetrics) {
                 elements.serverMetrics.classList.add('hidden');
+                elements.serverMetrics.innerHTML = '';
+            }
+            if (elements.serverInfo) {
+                showStatus(elements.serverInfo, 'error', `Error fetching metrics: ${error.message}`);
             }
         }
     }
     
     // Display voices list
     async function displayVoices() {
+        // Clear other displays
         if (elements.serverInfo) {
-            showStatus(elements.serverInfo, 'info', 'Fetching voices...');
+            elements.serverInfo.innerHTML = '';
+        }
+        if (elements.serverMetrics) {
+            elements.serverMetrics.classList.add('hidden');
+            elements.serverMetrics.innerHTML = '';
         }
         
         try {
@@ -140,8 +155,13 @@ export function initServerTab(elements) {
     
     // Display voice details
     async function displayVoiceDetails() {
+        // Clear other displays
         if (elements.serverInfo) {
-            showStatus(elements.serverInfo, 'info', 'Fetching voice details...');
+            elements.serverInfo.innerHTML = '';
+        }
+        if (elements.serverMetrics) {
+            elements.serverMetrics.classList.add('hidden');
+            elements.serverMetrics.innerHTML = '';
         }
         
         try {

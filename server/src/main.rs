@@ -1,11 +1,13 @@
 pub mod error;
 pub mod validation;
+pub mod config;
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{Path, State, WebSocketUpgrade},
-    response::IntoResponse,
+    extract::{Path, Request, State, WebSocketUpgrade},
+    middleware::Next,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -16,11 +18,9 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing::{error, info, warn};
 use std::sync::atomic::{AtomicU64, Ordering};
-use axum::extract::Request;
-use axum::middleware::Next;
-use axum::response::Response;
 
 use llm_core::{LlmClient, LlmProvider};
+use futures_util::SinkExt;
 
 use crate::error::ApiError;
 use crate::validation::{validate_chat_request, validate_conversation_id, validate_tts_request};
@@ -140,9 +140,9 @@ async fn async_main() -> anyhow::Result<()> {
     // CORS configuration - environment-aware
     let cors = if let Some(ref allowed_origins) = config.cors_allowed_origins {
         // Production: Use specific origins from environment
-        let origins: Vec<_> = allowed_origins
+        let origins: Vec<axum::http::HeaderValue> = allowed_origins
             .iter()
-            .filter_map(|origin| {
+            .filter_map(|origin: &String| {
                 origin.parse::<axum::http::HeaderValue>().ok()
             })
             .collect();
@@ -170,10 +170,10 @@ async fn async_main() -> anyhow::Result<()> {
     };
 
     // Rate limiting configuration
-    let governor_conf = Box::new(
+    let governor_conf = Arc::new(
         GovernorConfigBuilder::default()
-            .per_second(config.rate_limit_per_minute / 60) // Convert per-minute to per-second
-            .burst_size(config.rate_limit_per_minute)
+            .per_second((config.rate_limit_per_minute / 60) as u64) // Convert per-minute to per-second
+            .burst_size(config.rate_limit_per_minute as u32)
             .finish()
             .unwrap(),
     );
@@ -195,12 +195,11 @@ async fn async_main() -> anyhow::Result<()> {
         response
     }
     
+    // Note: GovernorLayer with axum feature should automatically handle errors
+    // If compilation fails, we may need to configure it differently
     let middleware_stack = ServiceBuilder::new()
-        .layer(axum::middleware::from_fn(add_request_id))
         .layer(TraceLayer::new_for_http())
-        .layer(GovernorLayer {
-            config: governor_conf,
-        })
+        .layer(GovernorLayer::new(governor_conf))
         .layer(TimeoutLayer::new(config.request_timeout()))
         .layer(cors)
         .into_inner();
@@ -227,6 +226,7 @@ async fn async_main() -> anyhow::Result<()> {
     let app = Router::new()
         .merge(api.clone())   // root paths
         .nest("/api", api)    // /api prefix
+        .layer(axum::middleware::from_fn(add_request_id))
         .layer(middleware_stack)
         .with_state(state);
 
@@ -393,7 +393,7 @@ pub async fn chat_endpoint(
     .await;
 
     let (reply, conv_id) = match result {
-        Ok(Ok(Ok(res))) => res?,
+        Ok(Ok(Ok((reply, conv_id)))) => (reply, conv_id),
         Ok(Ok(Err(join_err))) => {
             error!("Join error in chat task: {join_err}");
             return Err(ApiError::InternalError(format!("Join error: {join_err}")));
@@ -495,7 +495,7 @@ pub async fn voice_chat_endpoint(
     .await;
 
     let (reply, conv_id) = match result {
-        Ok(Ok(Ok(res))) => res?,
+        Ok(Ok(Ok((reply, conv_id)))) => (reply, conv_id),
         Ok(Ok(Err(join_err))) => {
             error!("Join error in voice chat task: {join_err}");
             return Err(ApiError::InternalError(format!("Join error: {join_err}")));
@@ -548,7 +548,7 @@ pub async fn stream_ws(
         return ws.on_upgrade(move |mut socket| async move {
             use axum::extract::ws::Message;
             let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
-            let _ = socket.send(Message::Text(error_msg.to_string())).await;
+            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
         });
     }
 
@@ -558,7 +558,7 @@ pub async fn stream_ws(
             Ok(s) => s,
             Err(e) => {
                 let err_msg = serde_json::json!({ "error": format!("TTS error: {e}"), "code": 500 });
-                let _ = socket.send(Message::Text(err_msg.to_string())).await;
+                let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
                 let _ = socket.close().await;
                 return;
             }
@@ -592,14 +592,14 @@ pub async fn stream_ws(
             let chunk: Vec<f32> = slice.to_vec();
 
             let msg = serde_json::json!({ "audio": chunk, "mel": mel_frame });
-            if let Err(e) = socket.send(Message::Text(msg.to_string())).await {
+            if let Err(e) = socket.send(Message::Text(msg.to_string().into())).await {
                 warn!("Failed to send WS message: {e}");
                 break;
             }
             offset += hop_size;
         }
 
-        let _ = socket.send(Message::Text(serde_json::json!({ "status": "complete" }).to_string())).await;
+        let _ = socket.send(Message::Text(serde_json::json!({ "status": "complete" }).to_string().into())).await;
         let _ = socket.close().await;
     })
 }

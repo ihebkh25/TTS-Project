@@ -4,8 +4,8 @@ use qdrant_client::{
     config::QdrantConfig,
     qdrant::{
         vectors_config::Config as QVectorsConfigEnum,
-        CreateCollection, Distance, GetPoints, PointId, PointStruct,
-        ScrollPoints, UpsertPoints, Value, VectorParams, VectorsConfig,
+        CreateCollection, Distance, PointStruct,
+        UpsertPoints, Value, VectorParams, VectorsConfig,
     },
     Qdrant,
 };

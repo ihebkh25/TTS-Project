@@ -111,6 +111,35 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
+    // Store decoded audio buffer for seeking analysis
+    let decodedAudioBuffer = null;
+    let bufferDecodePromise = null;
+    
+    // Decode audio buffer when available
+    const decodeAudioBuffer = async () => {
+        if (decodedAudioBuffer || bufferDecodePromise) {
+            return bufferDecodePromise || Promise.resolve(decodedAudioBuffer);
+        }
+        
+        if (!audioElement.src) return null;
+        
+        bufferDecodePromise = (async () => {
+            try {
+                const response = await fetch(audioElement.src);
+                const arrayBuffer = await response.arrayBuffer();
+                const tempContext = new (window.AudioContext || window.webkitAudioContext)();
+                decodedAudioBuffer = await tempContext.decodeAudioData(arrayBuffer);
+                tempContext.close();
+                return decodedAudioBuffer;
+            } catch (error) {
+                console.warn('[Spectrogram] Could not decode audio buffer:', error);
+                return null;
+            }
+        })();
+        
+        return bufferDecodePromise;
+    };
+    
     // Reuse existing AudioContext or create new one
     let audioContext = audioElement._audioContext;
     let source = audioElement._audioSource;
@@ -166,6 +195,8 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
     const dataArray = new Uint8Array(bufferLength);
     
     let animationFrame = null;
+    let lastSeekTime = 0;
+    let seekUpdateTimeout = null;
     
     function draw() {
         if (audioElement.paused || audioElement.ended) {
@@ -203,6 +234,138 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
             cancelAnimationFrame(animationFrame);
             animationFrame = null;
         }
+        // Update spectrogram to show current position when paused
+        if (analyser) {
+            analyser.getByteFrequencyData(dataArray);
+            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+        }
+    };
+    
+    // Function to analyze audio buffer at specific time
+    async function analyzeBufferAtTime(time) {
+        if (!decodedAudioBuffer) {
+            await decodeAudioBuffer();
+        }
+        
+        if (!decodedAudioBuffer) return null;
+        
+        const sampleRate = decodedAudioBuffer.sampleRate;
+        const startSample = Math.floor(time * sampleRate);
+        const fftSize = 2048;
+        
+        if (startSample >= decodedAudioBuffer.length) return null;
+        
+        // Get samples from buffer
+        const channelData = decodedAudioBuffer.getChannelData(0);
+        const endSample = Math.min(startSample + fftSize, decodedAudioBuffer.length);
+        const samples = channelData.slice(startSample, endSample);
+        
+        // Pad to fftSize if needed
+        const paddedSamples = new Float32Array(fftSize);
+        paddedSamples.set(samples, 0);
+        
+        // Use OfflineAudioContext to analyze
+        try {
+            const offlineContext = new OfflineAudioContext(1, fftSize, sampleRate);
+            const source = offlineContext.createBufferSource();
+            const buffer = offlineContext.createBuffer(1, fftSize, sampleRate);
+            buffer.copyToChannel(paddedSamples, 0);
+            source.buffer = buffer;
+            
+            const tempAnalyser = offlineContext.createAnalyser();
+            tempAnalyser.fftSize = fftSize;
+            source.connect(tempAnalyser);
+            tempAnalyser.connect(offlineContext.destination);
+            
+            source.start(0);
+            await offlineContext.startRendering();
+            
+            const result = new Uint8Array(tempAnalyser.frequencyBinCount);
+            tempAnalyser.getByteFrequencyData(result);
+            
+            return result;
+        } catch (error) {
+            console.warn('[Spectrogram] Error analyzing buffer:', error);
+            return null;
+        }
+    }
+    
+    // Handle seek event (when currentTime changes, e.g., via slider)
+    const seekHandler = () => {
+        lastSeekTime = Date.now();
+        // Update spectrogram when seeking, especially when paused
+        if (audioElement.paused && !audioElement.ended) {
+            // Clear any pending timeout
+            if (seekUpdateTimeout) {
+                clearTimeout(seekUpdateTimeout);
+            }
+            
+            // When seeking while paused, analyze the audio buffer at that position
+            seekUpdateTimeout = setTimeout(async () => {
+                if (audioElement.paused && audioElement.currentTime !== undefined) {
+                    try {
+                        const seekData = await analyzeBufferAtTime(audioElement.currentTime);
+                        if (seekData) {
+                            // Copy to main data array
+                            const copyLength = Math.min(seekData.length, dataArray.length);
+                            for (let i = 0; i < copyLength; i++) {
+                                dataArray[i] = seekData[i];
+                            }
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        } else if (analyser) {
+                            // Fallback to analyser
+                            analyser.getByteFrequencyData(dataArray);
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        }
+                    } catch (error) {
+                        console.warn('[Spectrogram] Error in seek handler:', error);
+                        // Fallback to analyser
+                        if (analyser) {
+                            analyser.getByteFrequencyData(dataArray);
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        }
+                    }
+                }
+            }, 50);
+        }
+    };
+    
+    // Handle timeupdate event (fires during seeking and playback)
+    const timeUpdateHandler = () => {
+        const timeSinceSeek = Date.now() - lastSeekTime;
+        // Update spectrogram during seeking when paused (within 500ms of seek)
+        // This provides smoother updates while dragging the slider
+        if (audioElement.paused && !audioElement.ended && timeSinceSeek < 500) {
+            // Throttle updates to avoid excessive redraws
+            if (seekUpdateTimeout) {
+                clearTimeout(seekUpdateTimeout);
+            }
+            seekUpdateTimeout = setTimeout(async () => {
+                if (audioElement.paused && audioElement.currentTime !== undefined) {
+                    try {
+                        const seekData = await analyzeBufferAtTime(audioElement.currentTime);
+                        if (seekData) {
+                            // Copy to main data array
+                            const copyLength = Math.min(seekData.length, dataArray.length);
+                            for (let i = 0; i < copyLength; i++) {
+                                dataArray[i] = seekData[i];
+                            }
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        } else if (analyser) {
+                            // Fallback to analyser
+                            analyser.getByteFrequencyData(dataArray);
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        }
+                    } catch (error) {
+                        // Fallback to analyser on error
+                        if (analyser) {
+                            analyser.getByteFrequencyData(dataArray);
+                            drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
+                        }
+                    }
+                }
+            }, 16); // ~60fps update rate
+        }
     };
     
     // Handle ended event
@@ -214,18 +377,41 @@ export function visualizeAudioSpectrogram(canvas, audioElement) {
         drawSpectrogramFrame(ctx, canvas, dataArray, null);
     };
     
+    // Start decoding buffer in background when audio loads
+    const loadHandler = () => {
+        if (audioElement.src) {
+            decodeAudioBuffer().catch(err => console.warn('[Spectrogram] Buffer decode error:', err));
+        }
+    };
+    
+    if (audioElement.readyState >= 2) {
+        // Audio already loaded
+        loadHandler();
+    } else {
+        audioElement.addEventListener('loadeddata', loadHandler, { once: true });
+    }
+    
     audioElement.addEventListener('play', playHandler);
     audioElement.addEventListener('pause', pauseHandler);
+    audioElement.addEventListener('seeked', seekHandler);
+    audioElement.addEventListener('timeupdate', timeUpdateHandler);
     audioElement.addEventListener('ended', endedHandler);
     
     // Store cleanup function
     audioElement._spectrogramCleanup = () => {
         audioElement.removeEventListener('play', playHandler);
         audioElement.removeEventListener('pause', pauseHandler);
+        audioElement.removeEventListener('seeked', seekHandler);
+        audioElement.removeEventListener('timeupdate', timeUpdateHandler);
         audioElement.removeEventListener('ended', endedHandler);
+        audioElement.removeEventListener('loadeddata', loadHandler);
         if (animationFrame) {
             cancelAnimationFrame(animationFrame);
             animationFrame = null;
+        }
+        if (seekUpdateTimeout) {
+            clearTimeout(seekUpdateTimeout);
+            seekUpdateTimeout = null;
         }
     };
     

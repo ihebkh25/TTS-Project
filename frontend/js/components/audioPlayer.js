@@ -22,10 +22,23 @@ export function setupCustomAudioPlayer(elements) {
         }
     });
     
-    // Progress bar
+    // Progress bar - handle both input (while dragging) and change (on release)
+    let isDragging = false;
+    
     elements.ttsProgress.addEventListener('input', (e) => {
+        isDragging = true;
         const time = (e.target.value / 100) * elements.ttsAudio.duration;
-        elements.ttsAudio.currentTime = time;
+        if (!isNaN(time) && isFinite(time)) {
+            elements.ttsAudio.currentTime = time;
+        }
+    });
+    
+    elements.ttsProgress.addEventListener('change', (e) => {
+        isDragging = false;
+        const time = (e.target.value / 100) * elements.ttsAudio.duration;
+        if (!isNaN(time) && isFinite(time)) {
+            elements.ttsAudio.currentTime = time;
+        }
     });
     
     // Speed control

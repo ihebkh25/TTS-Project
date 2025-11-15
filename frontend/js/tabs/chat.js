@@ -173,119 +173,68 @@ export function initChatTab(elements, state) {
         transcript: '',
         selectedLanguage: 'en_US',
         recordingStartTime: null,
-        recordingTimer: null
+        recordingTimer: null,
+        currentTranscriptMessage: null, // Reference to the real-time transcript message in chat
+        lastTranscriptUpdate: 0
     };
     
-    // Initialize voice mode canvas visualization
-    function initVoiceCanvas(canvas, isResponse = false) {
+    // Initialize input spectrogram canvas
+    function initInputSpectrogram() {
+        const canvas = elements.voiceInputSpectrogram;
         if (!canvas) return;
         
+        const container = canvas.parentElement;
+        if (!container) return;
+        
+        const rect = container.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        
         const ctx = canvas.getContext('2d');
-        const width = canvas.width = canvas.offsetWidth;
-        const height = canvas.height = canvas.offsetHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Clear canvas
-        ctx.clearRect(0, 0, width, height);
-        
-        if (isResponse) {
-            // Response canvas - draw background
-            ctx.fillStyle = 'rgba(30, 30, 30, 0.5)';
-            ctx.fillRect(0, 0, width, height);
-        }
-        
-        return { ctx, width, height };
+        return { ctx, canvas };
     }
     
-    // Draw audio visualization
-    function drawAudioVisualization(canvas, audioLevel, isRecording = false) {
-        if (!canvas || !audioLevel) return;
+    // Draw spectrogram in input field
+    function drawInputSpectrogram(audioLevel) {
+        const canvas = elements.voiceInputSpectrogram;
+        if (!canvas || !audioLevel || !voiceModeState.analyser || !voiceModeState.dataArray) return;
         
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
         
-        ctx.clearRect(0, 0, width, height);
-        
-        // Normalize audio level (0-255 to 0-1)
-        const normalizedLevel = Math.min(audioLevel / 255, 1);
-        
-        // Draw circular visualization for mic
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const maxRadius = Math.min(width, height) / 2 - 10;
-        
-        // Base circle
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, maxRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = isRecording ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.2)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        // Audio level visualization
-        const radius = maxRadius * (0.3 + normalizedLevel * 0.7);
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-        
-        if (isRecording) {
-            gradient.addColorStop(0, 'rgba(239, 68, 68, 0.6)');
-            gradient.addColorStop(0.5, 'rgba(239, 68, 68, 0.3)');
-            gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
-        } else {
-            gradient.addColorStop(0, 'rgba(99, 102, 241, 0.4)');
-            gradient.addColorStop(0.5, 'rgba(99, 102, 241, 0.2)');
-            gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
-        }
-        
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
-        
-        // Frequency bars
-        const barCount = 32;
-        const barWidth = (maxRadius * 2) / barCount;
-        
-        for (let i = 0; i < barCount; i++) {
-            const angle = (i / barCount) * Math.PI * 2;
-            const barHeight = (normalizedLevel * maxRadius * 0.5) * (0.5 + Math.random() * 0.5);
-            
-            ctx.save();
-            ctx.translate(centerX, centerY);
-            ctx.rotate(angle);
-            ctx.fillStyle = isRecording ? 'rgba(239, 68, 68, 0.6)' : 'rgba(99, 102, 241, 0.5)';
-            ctx.fillRect(maxRadius, -barWidth / 2, barHeight, barWidth);
-            ctx.restore();
-        }
-    }
-    
-    // Draw response audio visualization
-    function drawResponseVisualization(canvas, audioLevel) {
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const width = canvas.width;
-        const height = canvas.height;
-        
-        // Clear with background
-        ctx.fillStyle = 'rgba(30, 30, 30, 0.5)';
+        // Clear with semi-transparent background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.fillRect(0, 0, width, height);
         
-        if (!audioLevel) return;
+        // Get frequency data from analyser
+        voiceModeState.analyser.getByteFrequencyData(voiceModeState.dataArray);
         
-        const normalizedLevel = Math.min(audioLevel / 255, 1);
-        const barCount = 64;
+        // Draw frequency bars (spectrogram style)
+        const barCount = Math.min(64, voiceModeState.dataArray.length);
         const barWidth = width / barCount;
         
         for (let i = 0; i < barCount; i++) {
-            const barHeight = (normalizedLevel * height * 0.8) * (0.3 + Math.random() * 0.7);
+            // Get frequency data (use multiple bins for smoother visualization)
+            const binIndex = Math.floor((i / barCount) * voiceModeState.dataArray.length);
+            const intensity = voiceModeState.dataArray[binIndex] / 255;
+            const barHeight = intensity * height * 0.8;
             const x = i * barWidth;
-            const y = (height - barHeight) / 2;
+            const y = height - barHeight;
             
-            const gradient = ctx.createLinearGradient(x, 0, x + barWidth, height);
-            gradient.addColorStop(0, 'rgba(99, 102, 241, 0.8)');
-            gradient.addColorStop(1, 'rgba(139, 92, 246, 0.6)');
+            // Color gradient: blue to cyan to green to yellow
+            const hue = 240 - (intensity * 180);
+            const saturation = 100;
+            const lightness = 30 + (intensity * 50);
+            
+            const gradient = ctx.createLinearGradient(x, y, x, height);
+            gradient.addColorStop(0, `hsla(${hue}, ${saturation}%, ${lightness}%, 0.8)`);
+            gradient.addColorStop(1, `hsla(${hue}, ${saturation}%, ${lightness * 0.3}%, 0.3)`);
             
             ctx.fillStyle = gradient;
-            ctx.fillRect(x, y, barWidth - 2, barHeight);
+            ctx.fillRect(x, y, barWidth - 1, barHeight);
         }
     }
     
@@ -293,16 +242,26 @@ export function initChatTab(elements, state) {
     function startAudioVisualization() {
         if (voiceModeState.animationFrame) return;
         
+        // Initialize input spectrogram
+        initInputSpectrogram();
+        if (elements.voiceInputSpectrogram) {
+            elements.voiceInputSpectrogram.classList.remove('hidden');
+        }
+        
         function animate() {
             if (!voiceModeState.isRecording || !voiceModeState.analyser || !voiceModeState.dataArray) {
                 voiceModeState.animationFrame = null;
+                if (elements.voiceInputSpectrogram) {
+                    elements.voiceInputSpectrogram.classList.add('hidden');
+                }
                 return;
             }
             
             const audioLevel = calculateAudioLevel(voiceModeState.analyser, voiceModeState.dataArray);
             
-            if (elements.voiceMicCanvas) {
-                drawAudioVisualization(elements.voiceMicCanvas, audioLevel, true);
+            // Draw spectrogram in input field
+            if (elements.voiceInputSpectrogram) {
+                drawInputSpectrogram(audioLevel);
             }
             
             voiceModeState.animationFrame = requestAnimationFrame(animate);
@@ -318,9 +277,10 @@ export function initChatTab(elements, state) {
             voiceModeState.animationFrame = null;
         }
         
-        if (elements.voiceMicCanvas) {
-            const ctx = elements.voiceMicCanvas.getContext('2d');
-            ctx.clearRect(0, 0, elements.voiceMicCanvas.width, elements.voiceMicCanvas.height);
+        if (elements.voiceInputSpectrogram) {
+            elements.voiceInputSpectrogram.classList.add('hidden');
+            const ctx = elements.voiceInputSpectrogram.getContext('2d');
+            ctx.clearRect(0, 0, elements.voiceInputSpectrogram.width, elements.voiceInputSpectrogram.height);
         }
     }
     
@@ -407,14 +367,8 @@ export function initChatTab(elements, state) {
                     
                     voiceModeState.transcript = finalTranscript + interimTranscript;
                     
-                    if (elements.voiceTranscriptText) {
-                        elements.voiceTranscriptText.textContent = voiceModeState.transcript;
-                    }
-                    
-                    // Always show transcript container when recording
-                    if (elements.voiceTranscriptContainer) {
-                        elements.voiceTranscriptContainer.style.display = 'block';
-                    }
+                    // Update real-time transcript in chat
+                    updateRealTimeTranscript(voiceModeState.transcript, interimTranscript.length > 0);
                 };
                 
                 voiceModeState.speechRecognition.onerror = (event) => {
@@ -449,22 +403,14 @@ export function initChatTab(elements, state) {
             startAudioVisualization();
             
             // Update UI with visual feedback
-            if (elements.voiceMicButton) {
-                elements.voiceMicButton.classList.add('recording');
-            }
-            
-            // Add recording indicator to status
-            updateVoiceMicStatus('Listening...', true);
-            
-            // Add recording class to transcript container and show it
-            if (elements.voiceTranscriptContainer) {
-                elements.voiceTranscriptContainer.classList.add('recording');
-                elements.voiceTranscriptContainer.style.display = 'block';
-            }
+            updateVoiceModeStatus('Listening...', true);
             
             // Start recording timer
             voiceModeState.recordingStartTime = Date.now();
             startRecordingTimer();
+            
+            // Clear any previous transcript message
+            clearRealTimeTranscript();
             
             console.log('[Voice Mode] Recording started');
             showToast('success', 'Recording started');
@@ -472,21 +418,13 @@ export function initChatTab(elements, state) {
         } catch (error) {
             console.error('Error starting recording:', error);
             showToast('error', `Failed to start recording: ${error.message}`);
-            updateVoiceMicStatus('Error starting recording');
+            updateVoiceModeStatus('Error starting recording', false);
             
             // Reset recording state on error
             voiceModeState.isRecording = false;
             stopRecordingTimer();
             
-            if (elements.voiceMicButton) {
-                elements.voiceMicButton.classList.remove('recording');
-            }
-            
-            if (elements.voiceTranscriptContainer) {
-                elements.voiceTranscriptContainer.classList.remove('recording');
-            }
-            
-            updateVoiceMicStatus('Click to speak', false);
+            updateVoiceModeStatus('Click microphone to start recording', false);
             
             // Cleanup on error
             cleanupVoiceMode();
@@ -537,14 +475,7 @@ export function initChatTab(elements, state) {
         stopRecordingTimer();
         
         // Update UI - remove recording visual feedback
-        if (elements.voiceMicButton) {
-            elements.voiceMicButton.classList.remove('recording');
-        }
-        
-        // Remove recording class from transcript container
-        if (elements.voiceTranscriptContainer) {
-            elements.voiceTranscriptContainer.classList.remove('recording');
-        }
+        updateVoiceModeStatus('Click microphone to start recording', false);
         
         // Send message if we have a transcript
         const finalTranscript = voiceModeState.transcript.trim();
@@ -554,22 +485,31 @@ export function initChatTab(elements, state) {
         });
         
         if (finalTranscript) {
+            // Update the transcript message to final state
+            if (voiceModeState.currentTranscriptMessage) {
+                const messageContent = voiceModeState.currentTranscriptMessage.querySelector('.message-content');
+                if (messageContent) {
+                    messageContent.style.opacity = '1';
+                    messageContent.style.fontStyle = 'normal';
+                }
+                voiceModeState.currentTranscriptMessage.classList.remove('message-sending');
+            }
+            
             console.log('[Voice Mode] Sending voice message:', finalTranscript);
             sendVoiceMessage(finalTranscript);
         } else {
-            updateVoiceMicStatus('Click to speak', false);
+            // Remove transcript message if no speech detected
+            if (voiceModeState.currentTranscriptMessage) {
+                voiceModeState.currentTranscriptMessage.remove();
+                voiceModeState.currentTranscriptMessage = null;
+            }
             console.log('[Voice Mode] No speech detected');
             showToast('info', 'No speech detected');
         }
         
         // Clear transcript
         voiceModeState.transcript = '';
-        if (elements.voiceTranscriptText) {
-            elements.voiceTranscriptText.textContent = '';
-        }
-        if (elements.voiceTranscriptContainer) {
-            elements.voiceTranscriptContainer.style.display = 'none';
-        }
+        clearRealTimeTranscript();
     }
     
     // Send voice message
@@ -585,10 +525,15 @@ export function initChatTab(elements, state) {
             conversationId: state.currentConversationId
         });
         
-        updateVoiceMicStatus('Sending...', false);
-        updateVoiceResponseStatus('Processing...');
+        updateVoiceModeStatus('Sending...', false);
         
-        // Add user message to chat
+        // Remove the transcript message since we're sending the final message
+        if (voiceModeState.currentTranscriptMessage) {
+            voiceModeState.currentTranscriptMessage.remove();
+            voiceModeState.currentTranscriptMessage = null;
+        }
+        
+        // Add user message to chat (final version)
         addChatMessage(elements.chatMessages, 'user', message);
         
         try {
@@ -623,52 +568,39 @@ export function initChatTab(elements, state) {
             // Update with complete content
             if (botMessage) {
                 updateMessageState(botMessage, 'complete', data.reply || 'No response received');
-            }
-            
-            // Play audio response
-            if (data.audio_base64 && elements.voiceResponseAudio) {
-                const audioBlob = await base64ToBlob(data.audio_base64, 'audio/wav');
-                const audioUrl = URL.createObjectURL(audioBlob);
-                elements.voiceResponseAudio.src = audioUrl;
                 
-                // Visualize while playing
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createMediaElementSource(elements.voiceResponseAudio);
-                const analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                
-                source.connect(analyser);
-                analyser.connect(audioContext.destination);
-                
-                function visualizeResponse() {
-                    if (elements.voiceResponseAudio.paused || elements.voiceResponseAudio.ended) {
-                        if (elements.voiceResponseCanvas) {
-                            const ctx = elements.voiceResponseCanvas.getContext('2d');
-                            ctx.clearRect(0, 0, elements.voiceResponseCanvas.width, elements.voiceResponseCanvas.height);
+                // Add audio player for bot messages with audio
+                if (data.audio_base64) {
+                    const audioWrapper = document.createElement('div');
+                    audioWrapper.className = 'message-audio-wrapper';
+                    
+                    const audioElement = document.createElement('audio');
+                    audioElement.controls = true;
+                    audioElement.className = 'message-audio';
+                    
+                    // Convert base64 to blob URL
+                    base64ToBlob(data.audio_base64, 'audio/wav').then(blob => {
+                        const audioUrl = URL.createObjectURL(blob);
+                        audioElement.src = audioUrl;
+                        if (audioElement.previousUrl) {
+                            URL.revokeObjectURL(audioElement.previousUrl);
                         }
-                        audioContext.close();
-                        return;
-                    }
+                        audioElement.previousUrl = audioUrl;
+                        
+                        // Add spectrogram visualization
+                        addMessageSpectrogram(botMessage, audioElement, data.audio_base64);
+                        
+                        scrollChatToBottom(elements.chatMessages, true);
+                    }).catch(err => {
+                        console.error('Error creating audio blob:', err);
+                    });
                     
-                    analyser.getByteFrequencyData(dataArray);
-                    const audioLevel = calculateAudioLevel(analyser, dataArray);
-                    drawResponseVisualization(elements.voiceResponseCanvas, audioLevel);
-                    
-                    requestAnimationFrame(visualizeResponse);
+                    audioWrapper.appendChild(audioElement);
+                    botMessage.appendChild(audioWrapper);
                 }
-                
-                elements.voiceResponseAudio.play();
-                visualizeResponse();
-                
-                elements.voiceResponseAudio.onended = () => {
-                    updateVoiceResponseStatus('');
-                    audioContext.close();
-                };
             }
             
-            updateVoiceMicStatus('Click to speak');
-            updateVoiceResponseStatus('Response received');
+            updateVoiceModeStatus('Click microphone to start recording');
             showToast('success', 'Voice message sent successfully!');
             
         } catch (error) {
@@ -678,20 +610,70 @@ export function initChatTab(elements, state) {
                 'bot',
                 `Sorry, I'm having trouble with the voice chat. ${error.message}`
             );
-            updateVoiceMicStatus('Click to speak');
-            updateVoiceResponseStatus('Error occurred');
+            updateVoiceModeStatus('Click microphone to start recording');
             showToast('error', `Error: ${error.message}`);
         }
     }
     
-    // Update voice mic status
-    function updateVoiceMicStatus(status, isRecording = false) {
-        if (elements.voiceMicStatus) {
-            elements.voiceMicStatus.textContent = status;
+    // Update real-time transcript in chat
+    function updateRealTimeTranscript(transcript, isInterim = false) {
+        if (!transcript.trim() && !isInterim) return;
+        
+        const now = Date.now();
+        // Throttle updates to avoid too frequent DOM updates
+        if (now - voiceModeState.lastTranscriptUpdate < 100 && isInterim) {
+            return;
+        }
+        voiceModeState.lastTranscriptUpdate = now;
+        
+        // Create or update transcript message in chat
+        if (!voiceModeState.currentTranscriptMessage) {
+            // Create new message for transcript
+            voiceModeState.currentTranscriptMessage = addChatMessage(
+                elements.chatMessages,
+                'user',
+                transcript,
+                null,
+                'sending'
+            );
+            if (voiceModeState.currentTranscriptMessage) {
+                voiceModeState.currentTranscriptMessage.classList.add('voice-transcript-message');
+            }
+        } else {
+            // Update existing message
+            const messageContent = voiceModeState.currentTranscriptMessage.querySelector('.message-content');
+            if (messageContent) {
+                messageContent.textContent = transcript;
+                if (isInterim) {
+                    messageContent.style.opacity = '0.7';
+                    messageContent.style.fontStyle = 'italic';
+                } else {
+                    messageContent.style.opacity = '1';
+                    messageContent.style.fontStyle = 'normal';
+                }
+            }
+        }
+        
+        // Scroll to bottom to show latest transcript
+        scrollChatToBottom(elements.chatMessages, true);
+    }
+    
+    // Clear real-time transcript message
+    function clearRealTimeTranscript() {
+        if (voiceModeState.currentTranscriptMessage) {
+            voiceModeState.currentTranscriptMessage = null;
+        }
+    }
+    
+    // Update voice mode status
+    function updateVoiceModeStatus(status, isRecording = false) {
+        const statusText = elements.voiceModeStatusCompact?.querySelector('.voice-mode-status-text');
+        if (statusText) {
+            statusText.textContent = status;
             if (isRecording) {
-                elements.voiceMicStatus.classList.add('recording');
+                statusText.classList.add('recording');
             } else {
-                elements.voiceMicStatus.classList.remove('recording');
+                statusText.classList.remove('recording');
             }
         }
     }
@@ -714,9 +696,9 @@ export function initChatTab(elements, state) {
                 ? `${minutes}:${seconds.toString().padStart(2, '0')}`
                 : `${seconds}s`;
             
-            if (elements.voiceMicStatus) {
-                const baseText = 'Listening...';
-                elements.voiceMicStatus.innerHTML = `${baseText} <span class="recording-indicator">● ${timeStr}</span>`;
+            const statusText = elements.voiceModeStatusCompact?.querySelector('.voice-mode-status-text');
+            if (statusText) {
+                statusText.innerHTML = `Listening... <span class="recording-indicator">● ${timeStr}</span>`;
             }
         }, 100);
     }
@@ -730,30 +712,29 @@ export function initChatTab(elements, state) {
         voiceModeState.recordingStartTime = null;
     }
     
-    // Update voice response status
-    function updateVoiceResponseStatus(status) {
-        if (elements.voiceResponseStatus) {
-            elements.voiceResponseStatus.textContent = status;
-        }
-    }
-    
     // Enter voice mode
     async function enterVoiceMode() {
         if (voiceModeState.isActive) return;
         
         voiceModeState.isActive = true;
         
-        if (elements.textInputWrapper && elements.voiceModeWrapper) {
-            elements.textInputWrapper.classList.add('hidden');
-            elements.voiceModeWrapper.classList.remove('hidden');
+        // Show compact voice mode controls
+        if (elements.voiceModeControls) {
+            elements.voiceModeControls.classList.remove('hidden');
         }
         
-        // Initialize canvases
-        if (elements.voiceMicCanvas) {
-            initVoiceCanvas(elements.voiceMicCanvas);
-        }
-        if (elements.voiceResponseCanvas) {
-            initVoiceCanvas(elements.voiceResponseCanvas, true);
+        // Change voice toggle button to mic button
+        if (elements.voiceModeToggleBtn) {
+            elements.voiceModeToggleBtn.innerHTML = `
+                <svg class="voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            `;
+            elements.voiceModeToggleBtn.setAttribute('aria-label', 'Start recording');
+            elements.voiceModeToggleBtn.setAttribute('title', 'Start recording');
         }
         
         // Get selected language
@@ -761,7 +742,7 @@ export function initChatTab(elements, state) {
             voiceModeState.selectedLanguage = elements.voiceModeLanguage.value || 'en_US';
         }
         
-        updateVoiceMicStatus('Click to speak');
+        updateVoiceModeStatus('Click microphone to start recording');
         showToast('success', 'Voice mode activated');
     }
     
@@ -777,9 +758,23 @@ export function initChatTab(elements, state) {
         // Clean up
         cleanupVoiceMode();
         
-        if (elements.textInputWrapper && elements.voiceModeWrapper) {
-            elements.textInputWrapper.classList.remove('hidden');
-            elements.voiceModeWrapper.classList.add('hidden');
+        // Hide compact voice mode controls
+        if (elements.voiceModeControls) {
+            elements.voiceModeControls.classList.add('hidden');
+        }
+        
+        // Restore voice toggle button
+        if (elements.voiceModeToggleBtn) {
+            elements.voiceModeToggleBtn.innerHTML = `
+                <svg class="voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            `;
+            elements.voiceModeToggleBtn.setAttribute('aria-label', 'Use voice mode');
+            elements.voiceModeToggleBtn.setAttribute('title', 'Use voice mode');
         }
         
         voiceModeState.isActive = false;
@@ -816,20 +811,10 @@ export function initChatTab(elements, state) {
         voiceModeState.transcript = '';
         
         // Remove recording visual feedback
-        if (elements.voiceMicButton) {
-            elements.voiceMicButton.classList.remove('recording');
-        }
-        if (elements.voiceTranscriptContainer) {
-            elements.voiceTranscriptContainer.classList.remove('recording');
-        }
-        updateVoiceMicStatus('Click to speak', false);
+        updateVoiceModeStatus('Click microphone to start recording', false);
         
-        if (elements.voiceTranscriptText) {
-            elements.voiceTranscriptText.textContent = '';
-        }
-        if (elements.voiceTranscriptContainer) {
-            elements.voiceTranscriptContainer.style.display = 'none';
-        }
+        // Clear real-time transcript
+        clearRealTimeTranscript();
     }
     
     // Setup voice input and voice mode
@@ -842,7 +827,17 @@ export function initChatTab(elements, state) {
         // Setup voice mode toggle
         if (elements.voiceModeToggleBtn) {
             elements.voiceModeToggleBtn.addEventListener('click', () => {
-                enterVoiceMode();
+                if (voiceModeState.isActive) {
+                    // If voice mode is active, toggle recording
+                    if (voiceModeState.isRecording) {
+                        stopRecording();
+                    } else {
+                        startRecording();
+                    }
+                } else {
+                    // Enter voice mode
+                    enterVoiceMode();
+                }
             });
         }
         
@@ -850,17 +845,6 @@ export function initChatTab(elements, state) {
         if (elements.exitVoiceModeBtn) {
             elements.exitVoiceModeBtn.addEventListener('click', () => {
                 exitVoiceMode();
-            });
-        }
-        
-        // Voice mic button
-        if (elements.voiceMicButton) {
-            elements.voiceMicButton.addEventListener('click', () => {
-                if (voiceModeState.isRecording) {
-                    stopRecording();
-                } else {
-                    startRecording();
-                }
             });
         }
         

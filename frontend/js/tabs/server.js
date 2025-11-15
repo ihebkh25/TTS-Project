@@ -3,7 +3,6 @@
 import { CONFIG } from '../config.js';
 import { checkServerHealth, getServerMetrics, getVoices, getVoiceDetails } from '../services/api.js';
 import { showStatus, updateServerStatus } from '../utils/dom.js';
-import { showToast } from '../utils/toast.js';
 import { formatLanguageName } from '../utils/format.js';
 
 /**
@@ -24,7 +23,6 @@ export function initServerTab(elements) {
             if (elements.serverInfo) {
                 showStatus(elements.serverInfo, 'success', 'Server is running and healthy!');
             }
-            showToast('success', 'Server connected');
         } catch (error) {
             console.error('[Server Tab] Server Status Error:', {
                 name: error.name,
@@ -37,7 +35,6 @@ export function initServerTab(elements) {
             if (elements.serverInfo) {
                 showStatus(elements.serverInfo, 'error', `Server is not responding: ${error.message}`);
             }
-            showToast('error', `Server connection failed: ${error.message}`);
         }
     }
     
@@ -109,7 +106,6 @@ export function initServerTab(elements) {
             if (elements.serverInfo) {
                 showStatus(elements.serverInfo, 'success', 'Server metrics retrieved successfully!');
             }
-            showToast('success', 'Metrics updated');
         } catch (error) {
             console.error('Metrics Error:', error);
             if (elements.serverInfo) {

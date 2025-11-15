@@ -44,7 +44,6 @@ pub struct TtsRequest {
 #[derive(Serialize)]
 pub struct TtsResponse {
     audio_base64: String,
-    spectrogram_base64: String,
     duration_ms: u64,
     sample_rate: u32,
 }
@@ -345,12 +344,6 @@ pub async fn tts_endpoint(
         .map_err(ApiError::TtsError)?;
 
     let sample_rate_f32 = sample_rate as f32;
-    let frame_size = 1024usize;
-    let hop_size = 256usize;
-    let n_mels = 80usize;
-
-    let mel = tts_core::TtsManager::audio_to_mel(&samples, sample_rate_f32, frame_size, hop_size, n_mels);
-    let spectrogram_base64 = tts_core::TtsManager::mel_to_png_base64(&mel);
 
     let audio_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate)
         .map_err(|e| ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}")))?;
@@ -359,7 +352,6 @@ pub async fn tts_endpoint(
 
     Ok(Json(TtsResponse {
         audio_base64,
-        spectrogram_base64,
         duration_ms,
         sample_rate,
     }))

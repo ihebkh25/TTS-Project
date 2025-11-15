@@ -153,7 +153,6 @@
 									"pm.test(\"Response contains audio\", function () {",
 									"    var jsonData = pm.response.json();",
 									"    pm.expect(jsonData).to.have.property('audio_base64');",
-									"    pm.expect(jsonData).to.have.property('spectrogram_base64');",
 									"    pm.expect(jsonData).to.have.property('duration_ms');",
 									"    pm.expect(jsonData).to.have.property('sample_rate');",
 									"});",

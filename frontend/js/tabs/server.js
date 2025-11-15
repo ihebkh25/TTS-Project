@@ -271,12 +271,25 @@ export function initServerTab(elements) {
             elements.serverMetrics.appendChild(grid);
         } catch (error) {
             console.error('Metrics Error:', error);
-            if (elements.serverMetrics) {
-                elements.serverMetrics.classList.add('hidden');
-                elements.serverMetrics.innerHTML = '';
+            
+            // Stop streaming if active
+            if (isStreamingMetrics) {
+                stopMetricsStreaming();
             }
+            
+            // Display error in serverMetrics using the same card-based style as other buttons
+            if (elements.serverMetrics) {
+                elements.serverMetrics.classList.remove('hidden');
+                const grid = createErrorCard(`Error fetching metrics: ${error.message}`);
+                if (grid) {
+                    elements.serverMetrics.innerHTML = '';
+                    elements.serverMetrics.appendChild(grid);
+                }
+            }
+            
+            // Also clear serverInfo to avoid confusion
             if (elements.serverInfo && !updateOnly) {
-                showStatus(elements.serverInfo, 'error', `Error fetching metrics: ${error.message}`);
+                elements.serverInfo.innerHTML = '';
             }
         }
     }

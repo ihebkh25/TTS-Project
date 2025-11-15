@@ -31,7 +31,6 @@ export function initElements() {
         ttsBtn: document.getElementById('ttsBtn'),
         streamBtn: document.getElementById('streamBtn'),
         chatBtn: document.getElementById('chatBtn'),
-        downloadTtsBtn: document.getElementById('downloadTtsBtn'),
         clearChatBtn: document.getElementById('clearChatBtn'),
         exportChatBtn: document.getElementById('exportChatBtn'),
         
@@ -48,6 +47,7 @@ export function initElements() {
         streamAudioContainer: document.getElementById('streamAudioContainer'),
         streamDownloadBtn: document.getElementById('streamDownloadBtn'),
         ttsSpectrogram: document.getElementById('ttsSpectrogram'),
+        ttsSpectrogramCanvas: document.getElementById('ttsSpectrogramCanvas'),
         streamSpectrogram: document.getElementById('streamSpectrogram'),
         streamSpectrogramCanvas: document.getElementById('streamSpectrogramCanvas'),
         streamWaveform: document.getElementById('streamWaveform'),

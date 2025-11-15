@@ -52,12 +52,16 @@ pub struct VoiceInfo {
 pub struct ChatRequest {
     message: String,
     conversation_id: Option<String>,
+    language: Option<String>, // For TTS language selection
 }
 
 #[derive(Serialize)]
 pub struct ChatResponse {
     reply: String,
     conversation_id: String,
+    audio_base64: Option<String>, // Audio for bot response
+    sample_rate: Option<u32>,
+    duration_ms: Option<u64>,
 }
 
 #[tokio::main]
@@ -130,6 +134,7 @@ async fn async_main() -> anyhow::Result<()> {
         .route("/voices/detail", get(list_voices_detail))
         .route("/tts", post(tts_endpoint))
         .route("/chat", post(chat_endpoint))
+        .route("/voice-chat", post(voice_chat_endpoint))
         .route("/stream/:lang/:text", get(stream_ws));
 
     let app = Router::new()
@@ -206,6 +211,8 @@ pub async fn chat_endpoint(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ApiError> {
+    let start_time = std::time::Instant::now();
+    
     validate_chat_request(&req.message)?;
     if let Some(ref id) = req.conversation_id {
         validate_conversation_id(id)?;
@@ -214,7 +221,12 @@ pub async fn chat_endpoint(
     let message = req.message.clone();
     let conv_id = req.conversation_id.clone();
     let llm = state.llm.clone();
+    let language = req.language.clone();
 
+    info!("Chat request received: message length={}, conv_id={:?}", message.len(), conv_id);
+
+    // Optimize: Run LLM in blocking task without timeout (let it complete naturally)
+    // The LLM provider itself may have timeouts, but we don't enforce one here
     let result = tokio::task::spawn_blocking(move || {
         let llm = llm.lock().unwrap();
         let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -233,9 +245,114 @@ pub async fn chat_endpoint(
         }
     };
 
-    Ok(Json(ChatResponse {
-        reply,
+    let llm_time = start_time.elapsed();
+    info!("LLM response received in {:.2}s, reply length={}", llm_time.as_secs_f64(), reply.len());
+
+    // Return text immediately - TTS generation moved to background for speed
+    // This ensures response time is only limited by LLM, not TTS
+    let response = ChatResponse {
+        reply: reply.clone(),
+        conversation_id: conv_id.clone(),
+        audio_base64: None,
+        sample_rate: None,
+        duration_ms: None,
+    };
+
+    // Generate TTS in background (completely non-blocking)
+    if let Some(lang) = language {
+        let tts_state = state.tts.clone();
+        let reply_for_tts = reply;
+        tokio::spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok((samples, sr)) = tts_state.synthesize_with_sample_rate(&reply_for_tts, Some(&lang), None) {
+                    let _ = tts_core::TtsManager::encode_wav_base64(&samples, sr);
+                    // Audio generated in background - frontend can request via /tts if needed
+                }
+            }).await;
+        });
+    }
+
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+pub struct VoiceChatRequest {
+    message: String,
+    conversation_id: Option<String>,
+    language: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct VoiceChatResponse {
+    audio_base64: String,
+    sample_rate: u32,
+    duration_ms: u64,
+    conversation_id: String,
+    reply: String, // Original reply for display
+    cleaned_text: String, // Cleaned text that was actually spoken
+}
+
+pub async fn voice_chat_endpoint(
+    State(state): State<AppState>,
+    Json(req): Json<VoiceChatRequest>,
+) -> Result<Json<VoiceChatResponse>, ApiError> {
+    validate_chat_request(&req.message)?;
+    if let Some(ref id) = req.conversation_id {
+        validate_conversation_id(id)?;
+    }
+
+    let message = req.message.clone();
+    let conv_id = req.conversation_id.clone();
+    let llm = state.llm.clone();
+    // Default to en_US if available, otherwise de_DE
+    let default_lang = if state.tts.list_languages().contains(&"en_US".to_string()) {
+        "en_US"
+    } else {
+        "de_DE"
+    };
+    let language = req.language.clone().unwrap_or_else(|| default_lang.to_string());
+
+    // Get LLM response
+    let result = tokio::task::spawn_blocking(move || {
+        let llm = llm.lock().unwrap();
+        let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        match llm.chat_with_history(Some(conv_id.clone()), &message) {
+            Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
+            Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
+        }
+    })
+    .await;
+
+    let (reply, conv_id) = match result {
+        Ok(res) => res?,
+        Err(join_err) => {
+            error!("Join error in voice chat task: {join_err}");
+            return Err(ApiError::InternalError(format!("Join error: {join_err}")));
+        }
+    };
+
+    // Clean text for natural TTS speech
+    let cleaned_reply = clean_text_for_tts(&reply);
+    
+    // Generate TTS audio (required for voice chat)
+    let (samples, sample_rate) = state
+        .tts
+        .synthesize_with_sample_rate(&cleaned_reply, Some(&language), None)
+        .map_err(ApiError::TtsError)?;
+
+    let sample_rate_f32 = sample_rate as f32;
+    let duration_ms = (samples.len() as f32 / sample_rate_f32 * 1000.0) as u64;
+
+    let audio_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate)
+        .map_err(|e| ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}")))?;
+
+    Ok(Json(VoiceChatResponse {
+        audio_base64,
+        sample_rate,
+        duration_ms,
         conversation_id: conv_id,
+        reply: reply.clone(),
+        cleaned_text: cleaned_reply,
     }))
 }
 
@@ -302,4 +419,156 @@ pub async fn stream_ws(
         let _ = socket.send(Message::Text(serde_json::json!({ "status": "complete" }).to_string())).await;
         let _ = socket.close().await;
     })
+}
+
+/// Clean text for natural TTS speech
+/// Removes markdown, special formatting, and converts text to be more natural for speech
+fn clean_text_for_tts(text: &str) -> String {
+    let mut cleaned = text.to_string();
+    
+    // Remove markdown code blocks (multiline)
+    while let Some(start) = cleaned.find("```") {
+        if let Some(end) = cleaned[start + 3..].find("```") {
+            cleaned.replace_range(start..start + end + 6, "");
+        } else {
+            break;
+        }
+    }
+    
+    // Remove inline code blocks
+    while let Some(start) = cleaned.find('`') {
+        if let Some(end) = cleaned[start + 1..].find('`') {
+            let code_content = cleaned[start + 1..start + 1 + end].to_string();
+            cleaned.replace_range(start..start + end + 2, &code_content);
+        } else {
+            break;
+        }
+    }
+    
+    // Remove markdown links but keep the text [text](url) -> text
+    let mut pos = 0;
+    while let Some(start) = cleaned[pos..].find('[') {
+        let start = pos + start;
+        if let Some(mid) = cleaned[start + 1..].find(']') {
+            let mid = start + 1 + mid;
+            if let Some(end) = cleaned[mid + 1..].find(')') {
+                let end = mid + 1 + end;
+                let link_text = cleaned[start + 1..mid].to_string();
+                let link_len = link_text.len();
+                cleaned.replace_range(start..end + 1, &link_text);
+                pos = start + link_len;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    // Remove markdown bold/italic but keep the text
+    cleaned = cleaned.replace("**", "");
+    cleaned = cleaned.replace("*", "");
+    cleaned = cleaned.replace("__", "");
+    cleaned = cleaned.replace("_", "");
+    cleaned = cleaned.replace("~~", "");
+    cleaned = cleaned.replace("#", "");
+    
+    // Remove markdown headers (lines starting with #)
+    let lines: Vec<&str> = cleaned.lines().collect();
+    cleaned = lines
+        .iter()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') {
+                trimmed.trim_start_matches('#').trim_start()
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    
+    // Remove markdown list markers
+    let lines: Vec<&str> = cleaned.lines().collect();
+    cleaned = lines
+        .iter()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+                &trimmed[2..]
+            } else if let Some(num_end) = trimmed.find(". ") {
+                if trimmed[..num_end].chars().all(|c| c.is_ascii_digit()) {
+                    &trimmed[num_end + 2..]
+                } else {
+                    line
+                }
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    
+    // Remove "asterisk" word if it appears (TTS might read * as "asterisk")
+    cleaned = cleaned.replace(" asterisk ", " ");
+    cleaned = cleaned.replace(" asterisks ", " ");
+    cleaned = cleaned.replace("Asterisk ", "");
+    cleaned = cleaned.replace("Asterisks ", "");
+    
+    // Normalize whitespace - replace multiple spaces/newlines with single space
+    let mut result = String::with_capacity(cleaned.len());
+    let mut last_was_whitespace = false;
+    for ch in cleaned.chars() {
+        if ch.is_whitespace() {
+            if !last_was_whitespace {
+                result.push(' ');
+                last_was_whitespace = true;
+            }
+        } else {
+            result.push(ch);
+            last_was_whitespace = false;
+        }
+    }
+    cleaned = result;
+    
+    // Fix spacing around punctuation - remove space before punctuation
+    cleaned = cleaned.replace(" ,", ",");
+    cleaned = cleaned.replace(" .", ".");
+    cleaned = cleaned.replace(" !", "!");
+    cleaned = cleaned.replace(" ?", "?");
+    cleaned = cleaned.replace(" ;", ";");
+    cleaned = cleaned.replace(" :", ":");
+    
+    // Ensure space after punctuation (but not if it's already there or at end of string)
+    // Use a more careful approach to avoid double spaces
+    let mut result = String::with_capacity(cleaned.len() * 2);
+    let chars: Vec<char> = cleaned.chars().collect();
+    for i in 0..chars.len() {
+        result.push(chars[i]);
+        if matches!(chars[i], ',' | '.' | '!' | '?' | ';' | ':') {
+            // Add space after punctuation if not at end and next char is not whitespace or punctuation
+            if i + 1 < chars.len() {
+                let next_char = chars[i + 1];
+                if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') {
+                    result.push(' ');
+                }
+            }
+        }
+    }
+    cleaned = result;
+    
+    // Clean up double spaces that might have been created
+    while cleaned.contains("  ") {
+        cleaned = cleaned.replace("  ", " ");
+    }
+    
+    // Remove leading/trailing whitespace
+    cleaned = cleaned.trim().to_string();
+    
+    // If empty after cleaning, return original (fallback)
+    if cleaned.is_empty() {
+        text.to_string()
+    } else {
+        cleaned
+    }
 }

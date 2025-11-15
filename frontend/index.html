@@ -132,19 +132,34 @@
                 </button>
             </div>
 
-            <div class="chat-messages" id="chatMessages">
-                <div class="message bot welcome">
-                    👋 Hello! I'm your AI assistant. Ask me anything!
+            <div class="chat-messages-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message-wrapper">
+                        <div class="message-container bot">
+                            <div class="message bot welcome">
+                                👋 Hello! I'm your AI assistant. Ask me anything!
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <form id="chatForm" class="chat-form">
-                <div class="chat-form-input-wrapper">
+                <!-- Text Input Mode -->
+                <div class="chat-form-input-wrapper" id="textInputWrapper">
+                    <button type="button" class="btn-icon chat-voice-toggle-btn" id="voiceModeToggleBtn" aria-label="Use voice mode" title="Use voice mode">
+                        <svg class="voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
                     <input
                             type="text"
                             id="chatInput"
                             name="message"
-                            placeholder="Ask anything..."
+                            placeholder="Message ChatGPT..."
                             required
                             autocomplete="off"
                             maxlength="2000"
@@ -157,6 +172,51 @@
                         <span class="btn-spinner hidden"></span>
                     </button>
                 </div>
+                
+                <!-- Voice Mode Interface -->
+                <div class="voice-mode-wrapper hidden" id="voiceModeWrapper">
+                    <div class="voice-mode-container">
+                        <div class="voice-mode-header">
+                            <button type="button" class="btn-icon voice-mode-close" id="exitVoiceModeBtn" aria-label="Exit voice mode" title="Exit voice mode">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                            <h3 class="voice-mode-title">Voice Mode</h3>
+                            <div class="voice-mode-language-selector">
+                                <label for="voiceModeLanguage" class="voice-language-label">Voice</label>
+                                <select id="voiceModeLanguage" class="voice-language-select" name="language">
+                                    <option value="">Loading...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="voice-mode-content">
+                            <div class="voice-mic-container">
+                                <canvas id="voiceMicCanvas" class="voice-frequency-canvas"></canvas>
+                                <button type="button" class="voice-mic-button" id="voiceMicButton" aria-label="Start speaking">
+                                    <svg class="voice-mic-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                                    </svg>
+                                </button>
+                                <div class="voice-mic-status" id="voiceMicStatus">Click to speak</div>
+                            </div>
+                            <div class="voice-response-container">
+                                <canvas id="voiceResponseCanvas" class="voice-frequency-canvas"></canvas>
+                                <audio id="voiceResponseAudio" class="hidden"></audio>
+                                <div class="voice-response-status" id="voiceResponseStatus"></div>
+                            </div>
+                        </div>
+                        <div class="voice-transcript-container" id="voiceTranscriptContainer">
+                            <div class="voice-transcript-label">Speaking:</div>
+                            <div class="voice-transcript-text" id="voiceTranscriptText"></div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div id="chatStatus" class="status-container"></div>
             </form>
         </section>

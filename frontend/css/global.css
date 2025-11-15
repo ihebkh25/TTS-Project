@@ -134,6 +134,7 @@ body {
     height: 100%;
     display: flex;
     flex-direction: column;
+    max-width: 100%;
 }
 
 .main-content:has(#chatSection.active) .header {
@@ -242,6 +243,7 @@ body {
     opacity: 1;
     transform: translateY(0);
 }
+
 
 /* Form Elements */
 .form-group {

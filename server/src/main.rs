@@ -219,7 +219,8 @@ async fn async_main() -> anyhow::Result<()> {
         .route("/tts", post(tts_endpoint))
         .route("/chat", post(chat_endpoint))
         .route("/voice-chat", post(voice_chat_endpoint))
-        .route("/stream/{lang}/{text}", get(stream_ws));
+        .route("/stream/{lang}/{text}", get(stream_ws))
+        .route("/ws/chat/stream", get(chat_stream_ws));
     
     // Metrics endpoint - consider adding authentication in production
     let metrics_api = Router::new()
@@ -830,6 +831,275 @@ pub async fn stream_ws(
             }).to_string().into()
         )).await;
         let _ = socket.close().await;
+    })
+}
+
+/// WebSocket endpoint for streaming chat (LLM + TTS)
+/// Accepts query parameters: message, conversation_id (optional), language (optional)
+pub async fn chat_stream_ws(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let message = params.get("message").cloned().unwrap_or_default();
+    let conversation_id = params.get("conversation_id").cloned();
+    let language = params.get("language").cloned();
+    
+    if message.is_empty() {
+        return ws.on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            let error_msg = serde_json::json!({ "error": "Message parameter is required", "code": 400 });
+            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+        });
+    }
+    
+    if let Err(e) = validate_chat_request(&message) {
+        return ws.on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
+            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+        });
+    }
+    
+    if let Some(ref id) = conversation_id {
+        if let Err(e) = validate_conversation_id(id) {
+            return ws.on_upgrade(move |mut socket| async move {
+                use axum::extract::ws::Message;
+                let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
+                let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+            });
+        }
+    }
+
+    ws.on_upgrade(move |socket| async move {
+        use axum::extract::ws::Message;
+        use futures_util::{SinkExt as _, StreamExt as _};
+        
+        // Split socket into sender and receiver
+        let (mut sender, _receiver) = socket.split();
+        
+        // Send initial status
+        let _ = sender.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "streaming", 
+                "message": "Starting LLM stream..." 
+            }).to_string().into()
+        )).await;
+        
+        // Get LLM client and create stream
+        let llm = state.llm.clone();
+        let message_clone = message.clone();
+        let conv_id_clone = conversation_id.clone();
+        
+        // Create channel for LLM tokens
+        let (token_stream_tx, mut token_stream_rx) = mpsc::channel::<Result<String, String>>(100);
+        let token_stream_tx_clone = token_stream_tx.clone();
+        
+        // Spawn task to handle LLM streaming
+        // We need to create the stream in a way that doesn't hold the lock
+        // The stream uses channels internally, so it should be 'static after creation
+        tokio::spawn(async move {
+            // Create stream - we need to hold the lock only briefly
+            // The stream itself uses channels and spawned tasks, so it's independent
+            let mut stream = {
+                // Hold lock only to create the stream
+                let llm_guard = llm.lock().unwrap();
+                llm_guard.chat_with_history_stream(conv_id_clone, &message_clone)
+            };
+            // Lock is released here - stream should be independent
+            
+            // Consume stream and forward tokens
+            use futures_util::StreamExt as _;
+            while let Some(result) = stream.next().await {
+                if token_stream_tx_clone.send(result.map_err(|e| e.to_string())).await.is_err() {
+                    break; // Receiver dropped
+                }
+            }
+        });
+        
+        // Create channel for TTS audio chunks
+        let (tts_tx, mut tts_rx) = mpsc::channel::<Result<(String, u32), String>>(10);
+        let tts_tx_clone = tts_tx.clone();
+        
+        // Stream tokens and optionally generate TTS
+        let mut full_text = String::new();
+        let mut accumulated_text = String::new();
+        let tts_state = state.tts.clone();
+        let lang = language.clone().unwrap_or_else(|| "en_US".to_string());
+        
+        // Buffer for TTS generation (generate TTS for chunks of text)
+        const TTS_CHUNK_SIZE: usize = 50; // Generate TTS every ~50 characters
+        
+        // Track if LLM stream is complete
+        let mut llm_complete = false;
+        let mut pending_tts_tasks = 0u32;
+        
+        // Use select to handle both LLM tokens and TTS chunks
+        loop {
+            tokio::select! {
+                // Handle LLM tokens
+                token_result = token_stream_rx.recv(), if !llm_complete => {
+                    match token_result {
+                        Some(Ok(token)) => {
+                            full_text.push_str(&token);
+                            accumulated_text.push_str(&token);
+                            
+                            // Send token to client
+                            if let Err(e) = sender.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "token",
+                                    "token": token.clone(),
+                                    "text": full_text.clone()
+                                }).to_string().into()
+                            )).await {
+                                warn!("Failed to send token: {}", e);
+                                break;
+                            }
+                            
+                            // Generate TTS chunk if we have enough text
+                            if accumulated_text.len() >= TTS_CHUNK_SIZE {
+                                let text_for_tts = accumulated_text.clone();
+                                accumulated_text.clear();
+                                
+                                // Generate TTS in background
+                                let tts_state_clone = tts_state.clone();
+                                let lang_clone = lang.clone();
+                                let tts_tx_for_task = tts_tx_clone.clone();
+                                
+                                pending_tts_tasks += 1;
+                                tokio::spawn(async move {
+                                    let (samples, sample_rate) = match tokio::task::spawn_blocking(move || {
+                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts, Some(&lang_clone), None)
+                                    }).await {
+                                        Ok(Ok(result)) => result,
+                                        Ok(Err(e)) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("TTS error: {}", e))).await;
+                                            return;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("Task error: {}", e))).await;
+                                            return;
+                                        }
+                                    };
+                                    
+                                    // Convert to base64 WAV
+                                    match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
+                                        Ok(audio_base64) => {
+                                            let _ = tts_tx_for_task.send(Ok((audio_base64, sample_rate))).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("WAV encoding error: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        Some(Err(e)) => {
+                            let err_msg = serde_json::json!({ "error": format!("Stream error: {e}"), "code": 500 });
+                            let _ = sender.send(Message::Text(err_msg.to_string().into())).await;
+                            break;
+                        }
+                        None => {
+                            // LLM stream complete - generate TTS for remaining text
+                            llm_complete = true;
+                            if !accumulated_text.is_empty() {
+                                let text_for_tts = accumulated_text.clone();
+                                accumulated_text.clear();
+                                pending_tts_tasks += 1;
+                                
+                                let tts_state_final = tts_state.clone();
+                                let lang_final = lang.clone();
+                                let tts_tx_final = tts_tx_clone.clone();
+                                
+                                tokio::spawn(async move {
+                                    match tokio::task::spawn_blocking(move || {
+                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts, Some(&lang_final), None)
+                                    }).await {
+                                        Ok(Ok((samples, sample_rate))) => {
+                                            match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
+                                                Ok(audio_base64) => {
+                                                    let _ = tts_tx_final.send(Ok((audio_base64, sample_rate))).await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tts_tx_final.send(Err(format!("WAV encoding error: {}", e))).await;
+                                                }
+                                            }
+                                        }
+                                        Ok(Err(e)) => {
+                                            let _ = tts_tx_final.send(Err(format!("TTS error: {}", e))).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_final.send(Err(format!("Task error: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            // If no pending TTS tasks, we can break
+                            if pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Handle TTS chunks
+                tts_result = tts_rx.recv() => {
+                    match tts_result {
+                        Some(Ok((audio_base64, sample_rate))) => {
+                            if pending_tts_tasks > 0 {
+                                pending_tts_tasks -= 1;
+                            }
+                            
+                            if let Err(e) = sender.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "audio_chunk",
+                                    "audio": audio_base64,
+                                    "sample_rate": sample_rate
+                                }).to_string().into()
+                            )).await {
+                                warn!("Failed to send audio chunk: {}", e);
+                                break;
+                            }
+                            
+                            // If LLM is complete and no more pending tasks, break
+                            if llm_complete && pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            if pending_tts_tasks > 0 {
+                                pending_tts_tasks -= 1;
+                            }
+                            warn!("TTS error: {}", e);
+                            
+                            // If LLM is complete and no more pending tasks, break
+                            if llm_complete && pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                        None => {
+                            // TTS channel closed - if LLM is also complete, we're done
+                            if llm_complete {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Send completion status
+        let _ = sender.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "complete",
+                "text": full_text
+            }).to_string().into()
+        )).await;
+        
+        let _ = sender.close().await;
     })
 }
 

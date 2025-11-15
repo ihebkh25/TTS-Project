@@ -210,6 +210,17 @@ export function initStreamTab(elements, state) {
                 onMetadata: (metadata) => {
                     streamMetadata = metadata;
                     console.log('[Stream] Metadata received:', metadata);
+                    
+                    // Update chunks display if we now have the actual total
+                    if (metadata.totalChunks > 0 && elements.streamMetrics) {
+                        const chunksDisplay = elements.streamMetrics.querySelector('#streamChunks');
+                        if (chunksDisplay) {
+                            // Get current chunk number from the display or use metadata
+                            const currentText = chunksDisplay.textContent;
+                            const currentChunk = currentText.match(/^(\d+)/)?.[1] || metadata.totalChunks;
+                            chunksDisplay.textContent = `${currentChunk} / ${metadata.totalChunks}`;
+                        }
+                    }
                 },
                 onStatus: (status, message) => {
                     console.log('[Stream] Status:', status, message);
@@ -248,7 +259,12 @@ export function initStreamTab(elements, state) {
                         }
                         
                         if (chunksDisplay) {
-                            chunksDisplay.textContent = `${metrics.chunk} / ${metrics.totalChunks}`;
+                            // Show "?" for total until we know the actual value
+                            if (metrics.totalChunks > 0) {
+                                chunksDisplay.textContent = `${metrics.chunk} / ${metrics.totalChunks}`;
+                            } else {
+                                chunksDisplay.textContent = `${metrics.chunk} / ?`;
+                            }
                         }
                         
                         if (chunksPerSec) {

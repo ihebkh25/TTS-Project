@@ -692,22 +692,16 @@ pub async fn stream_ws(
                         };
                         let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
                         
-                        // Send metadata after first chunk (we now have better estimates)
+                        // Send metadata after first chunk (for sample rate and hop size info)
+                        // Don't send total_chunks here - wait until we know the actual value
                         if !metadata_sent {
-                            // Estimate total based on current progress and text length
-                            // Rough estimate: ~100 samples per character (varies by voice)
-                            // Use a conservative estimate that will be updated when complete
-                            let estimated_total = (text.len() * 100).max(total_samples * 3);
-                            let estimated_duration = estimated_total as f32 / sample_rate;
-                            let estimated_chunks = (estimated_total + hop_size - 1) / hop_size;
-                            
                             let _ = socket.send(Message::Text(
                                 serde_json::json!({
                                     "type": "metadata",
                                     "sample_rate": sample_rate as u32,
-                                    "total_samples": estimated_total,
-                                    "estimated_duration": estimated_duration,
-                                    "total_chunks": estimated_chunks,
+                                    "total_samples": 0, // Unknown until complete
+                                    "estimated_duration": 0.0, // Unknown until complete
+                                    "total_chunks": 0, // Don't send estimate - wait for actual
                                     "hop_size": hop_size
                                 }).to_string().into()
                             )).await;
@@ -719,33 +713,10 @@ pub async fn stream_ws(
                         // Since we don't know final total until synthesis completes, we use a conservative estimate
                         chunk_number += 1;
                         
-                        // Estimate total chunks based on current samples received
-                        // As we receive more samples, the estimate becomes more accurate
-                        // Use a conservative multiplier that decreases as we receive more data
-                        let estimated_total_samples = if total_samples > 0 {
-                            // Early on: use a higher multiplier (2.0x) for safety
-                            // As we receive more: reduce multiplier (down to 1.1x)
-                            // This gives a conservative but improving estimate
-                            let multiplier = if total_samples < 10000 {
-                                2.5 // Very early: 2.5x
-                            } else if total_samples < 50000 {
-                                1.8 // Early: 1.8x
-                            } else if total_samples < 100000 {
-                                1.4 // Mid: 1.4x
-                            } else {
-                                1.2 // Late: 1.2x
-                            };
-                            (total_samples as f32 * multiplier) as usize
-                        } else {
-                            // Fallback to text-based estimate
-                            (text.len() * 100).max(1000)
-                        };
-                        let estimated_total_chunks = (estimated_total_samples + hop_size - 1) / hop_size;
-                        
                         let progress = if total_samples > offset {
-                            // Progress based on what we've processed vs estimated total
+                            // Progress based on what we've processed vs what we've received
                             // Cap at 95% until we know the final total
-                            ((offset as f32 / estimated_total_samples as f32) * 100.0 * 0.95).min(95.0)
+                            ((offset as f32 / total_samples as f32) * 100.0 * 0.95).min(95.0)
                         } else {
                             0.0
                         };
@@ -757,7 +728,7 @@ pub async fn stream_ws(
                             "audio": chunk, 
                             "mel": mel_frame,
                             "chunk": chunk_number,
-                            "total_chunks": estimated_total_chunks, // Real-time estimate
+                            "total_chunks": 0, // Don't send total until we know it (final metadata)
                             "progress": progress,
                             "timestamp": timestamp,
                             "duration": chunk_duration,

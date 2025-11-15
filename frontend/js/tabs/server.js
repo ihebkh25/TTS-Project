@@ -51,7 +51,12 @@ export function initServerTab(elements) {
         }
         
         try {
+            // Measure response time
+            const startTime = performance.now();
             const healthResponse = await checkServerHealth();
+            const endTime = performance.now();
+            const responseTimeMs = Math.round(endTime - startTime);
+            
             console.log('[Server Tab] Server health check passed:', healthResponse);
             if (elements.serverStatus) {
                 updateServerStatus(elements.serverStatus, 'connected', 'Server Connected');
@@ -74,7 +79,8 @@ export function initServerTab(elements) {
                 // Response time card
                 const timeCard = templates.cardTemplate.content.cloneNode(true).querySelector('.metric-card');
                 timeCard.querySelector('.metric-label').textContent = 'Response Time';
-                timeCard.querySelector('.metric-value').textContent = `${healthResponse.response_time_ms ? healthResponse.response_time_ms.toFixed(0) : 'N/A'}ms`;
+                const timeValue = timeCard.querySelector('.metric-value');
+                timeValue.textContent = responseTimeMs > 0 ? `${responseTimeMs}ms` : 'N/A';
                 timeCard.querySelector('.metric-detail').textContent = 'Health check response';
                 grid.appendChild(timeCard);
                 

@@ -41,6 +41,8 @@ export const CONFIG = {
         RETRY_ATTEMPTS: 3,
         RETRY_DELAY: 1000, // ms
         TIMEOUT: 60000, // 60 seconds
+        LLM_TIMEOUT: 180000, // 3 minutes for LLM
+        TTS_TIMEOUT: 120000, // 2 minutes for TTS
     },
     
     // UI Configuration
@@ -50,3 +52,25 @@ export const CONFIG = {
     },
 };
 
+// Language mappings
+export const LANGUAGE_NAMES = {
+    'de_DE': 'German (Germany)',
+    'fr_FR': 'French (France)',
+    'en_US': 'English (US)',
+    'en_GB': 'English (UK)',
+    'es_ES': 'Spanish (Spain)',
+    'it_IT': 'Italian (Italy)',
+    'pt_PT': 'Portuguese (Portugal)',
+    'nl_NL': 'Dutch (Netherlands)'
+};
+
+export const TTS_TO_SPEECH_LANG = {
+    'de_DE': 'de-DE',
+    'fr_FR': 'fr-FR',
+    'en_US': 'en-US',
+    'en_GB': 'en-GB',
+    'es_ES': 'es-ES',
+    'it_IT': 'it-IT',
+    'pt_PT': 'pt-PT',
+    'nl_NL': 'nl-NL'
+};

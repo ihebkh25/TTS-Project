@@ -59,6 +59,41 @@
     font-variant-numeric: tabular-nums;
 }
 
+.audio-speed-control {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.audio-speed-label {
+    font-size: var(--font-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.audio-speed-select {
+    background: var(--surface-light);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: var(--space-xs) var(--space-sm);
+    color: var(--text);
+    font-size: var(--font-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 60px;
+}
+
+.audio-speed-select:hover {
+    border-color: #555;
+    background: var(--border-light);
+}
+
+.audio-speed-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
 .audio-waveform-container {
     width: 100%;
     height: 80px;

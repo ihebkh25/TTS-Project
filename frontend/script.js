@@ -75,6 +75,7 @@ function initElements() {
         ttsSpectrogram: document.getElementById('ttsSpectrogram'),
         streamSpectrogram: document.getElementById('streamSpectrogram'),
         streamSpectrogramCanvas: document.getElementById('streamSpectrogramCanvas'),
+        streamWaveform: document.getElementById('streamWaveform'),
         chatMessages: document.getElementById('chatMessages'),
         streamProgress: document.getElementById('streamProgress'),
         serverMetrics: document.getElementById('serverMetrics'),
@@ -85,6 +86,7 @@ function initElements() {
         ttsProgress: document.getElementById('ttsProgress'),
         ttsWaveform: document.getElementById('ttsWaveform'),
         ttsDownloadBtn: document.getElementById('ttsDownloadBtn'),
+        ttsSpeed: document.getElementById('ttsSpeed'),
         ttsCurrentTime: document.querySelector('#ttsAudioPlayer .current-time'),
         ttsDuration: document.querySelector('#ttsAudioPlayer .duration'),
         
@@ -360,6 +362,16 @@ function setupEventListeners() {
     // Download button
     if (elements.downloadTtsBtn) {
         elements.downloadTtsBtn.addEventListener('click', downloadTtsAudio);
+    }
+    
+    // Speed control
+    if (elements.ttsSpeed) {
+        elements.ttsSpeed.addEventListener('change', (e) => {
+            const speed = parseFloat(e.target.value);
+            if (elements.ttsAudio) {
+                elements.ttsAudio.playbackRate = speed;
+            }
+        });
     }
     
     // Streaming download button
@@ -739,9 +751,11 @@ async function startWebSocketStream(text, language) {
                     // Convert f32 audio samples to WAV and encode as base64
                     const wavBase64 = convertF32ArrayToWavBase64(audioSamples, sampleRate);
                     
-                    // Store blob for download
-                    base64ToBlob(wavBase64, 'audio/wav').then(blob => {
+                    // Store blob for download and generate waveform
+                    base64ToBlob(wavBase64, 'audio/wav').then(async blob => {
                         currentStreamAudioBlob = blob;
+                        // Generate waveform visualization
+                        await generateStreamWaveform(blob);
                     });
                     
                     playAudio(elements.streamAudio, wavBase64);
@@ -938,6 +952,12 @@ async function setupAudioPlayer(base64Data) {
         elements.ttsAudio.src = audioUrl;
         elements.ttsAudioPlayer.classList.remove('hidden');
         
+        // Reset speed to default
+        if (elements.ttsSpeed) {
+            elements.ttsSpeed.value = '1';
+            elements.ttsAudio.playbackRate = 1.0;
+        }
+        
         // Generate waveform
         await generateWaveform(audioBlob);
         
@@ -998,6 +1018,67 @@ async function generateWaveform(audioBlob) {
         
     } catch (error) {
         console.error('Waveform generation error:', error);
+    }
+}
+
+// Generate waveform visualization for streaming tab
+async function generateStreamWaveform(audioBlob) {
+    if (!elements.streamWaveform) return;
+    
+    try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        const canvas = elements.streamWaveform;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width = canvas.offsetWidth || 800;
+        const height = canvas.height = 120; // Fixed height for streaming waveform
+        
+        const data = audioBuffer.getChannelData(0);
+        const step = Math.ceil(data.length / width);
+        const amp = height / 2;
+        
+        // Clear canvas with light background
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Draw waveform
+        ctx.fillStyle = '#6366f1';
+        ctx.beginPath();
+        ctx.moveTo(0, amp);
+        
+        for (let i = 0; i < width; i++) {
+            let min = 1.0;
+            let max = -1.0;
+            
+            for (let j = 0; j < step; j++) {
+                const idx = (i * step) + j;
+                if (idx < data.length) {
+                    const datum = data[idx];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
+            }
+            
+            ctx.lineTo(i, (1 + min) * amp);
+            ctx.lineTo(i, (1 + max) * amp);
+        }
+        
+        ctx.lineTo(width, amp);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Add gradient overlay (different colors for streaming)
+        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.8)');
+        gradient.addColorStop(0.5, 'rgba(139, 92, 246, 0.6)');
+        gradient.addColorStop(1, 'rgba(168, 85, 247, 0.8)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+    } catch (error) {
+        console.error('Stream waveform generation error:', error);
     }
 }
 

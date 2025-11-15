@@ -73,6 +73,18 @@
                         <span class="current-time">0:00</span>
                         <span class="duration">0:00</span>
                     </div>
+                    <div class="audio-speed-control">
+                        <label for="ttsSpeed" class="audio-speed-label" title="Playback Speed">Speed:</label>
+                        <select id="ttsSpeed" class="audio-speed-select">
+                            <option value="0.5">0.5x</option>
+                            <option value="0.75">0.75x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="1.75">1.75x</option>
+                            <option value="2">2x</option>
+                        </select>
+                    </div>
                     <button class="audio-btn download-btn" id="ttsDownloadBtn" aria-label="Download">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </button>
@@ -118,6 +130,9 @@
                 </div>
             </div>
             <div id="streamAudioContainer" class="hidden">
+                <div class="audio-waveform-container" style="margin-bottom: var(--space-sm);">
+                    <canvas id="streamWaveform" class="audio-waveform"></canvas>
+                </div>
                 <audio id="streamAudio" class="audio-player" controls></audio>
                 <button class="btn btn-secondary" id="streamDownloadBtn" style="margin-top: var(--space-sm);">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 4px;">

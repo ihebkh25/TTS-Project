@@ -67,7 +67,7 @@ export function addChatMessage(container, sender, message, audioBase64 = null, s
             messageContent.appendChild(typingIndicator);
         } else {
             // Fallback
-            messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
         }
     } else {
         messageContent.textContent = message;
@@ -146,7 +146,7 @@ export function updateMessageState(messageElement, state, content = null) {
             messageContent.appendChild(typingIndicator);
         } else {
             // Fallback
-            messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
         }
     } else if (state === 'complete' && content) {
         messageContent.textContent = content;

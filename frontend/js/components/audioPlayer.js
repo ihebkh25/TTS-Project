@@ -37,7 +37,7 @@ export function setupCustomAudioPlayer(elements) {
         isDragging = false;
         const time = (e.target.value / 100) * elements.ttsAudio.duration;
         if (!isNaN(time) && isFinite(time)) {
-            elements.ttsAudio.currentTime = time;
+        elements.ttsAudio.currentTime = time;
         }
     });
     
@@ -118,6 +118,24 @@ export async function setupAudioPlayer(elements, base64Data) {
         if (elements.ttsWaveform) {
             await generateWaveform(audioBlob, elements.ttsWaveform);
         }
+        
+        // Auto-play audio after it's loaded
+        const playAudio = () => {
+            if (elements.ttsAudio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+                elements.ttsAudio.play().catch(error => {
+                    console.warn('[Audio] Autoplay prevented:', error);
+                    // Autoplay was prevented by browser policy - user will need to click play
+                });
+            } else {
+                elements.ttsAudio.addEventListener('canplay', () => {
+                    elements.ttsAudio.play().catch(error => {
+                        console.warn('[Audio] Autoplay prevented:', error);
+                    });
+                }, { once: true });
+            }
+        };
+        
+        playAudio();
         
         return audioBlob;
     } catch (error) {

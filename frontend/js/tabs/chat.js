@@ -859,7 +859,7 @@ export function initChatTab(elements, state) {
                     }
                 } else {
                     // Enter voice mode
-                    enterVoiceMode();
+                enterVoiceMode();
                 }
             });
         }

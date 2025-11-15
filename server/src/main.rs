@@ -718,10 +718,34 @@ pub async fn stream_ws(
                         // Progress is based on samples processed (offset) vs samples received so far
                         // Since we don't know final total until synthesis completes, we use a conservative estimate
                         chunk_number += 1;
+                        
+                        // Estimate total chunks based on current samples received
+                        // As we receive more samples, the estimate becomes more accurate
+                        // Use a conservative multiplier that decreases as we receive more data
+                        let estimated_total_samples = if total_samples > 0 {
+                            // Early on: use a higher multiplier (2.0x) for safety
+                            // As we receive more: reduce multiplier (down to 1.1x)
+                            // This gives a conservative but improving estimate
+                            let multiplier = if total_samples < 10000 {
+                                2.5 // Very early: 2.5x
+                            } else if total_samples < 50000 {
+                                1.8 // Early: 1.8x
+                            } else if total_samples < 100000 {
+                                1.4 // Mid: 1.4x
+                            } else {
+                                1.2 // Late: 1.2x
+                            };
+                            (total_samples as f32 * multiplier) as usize
+                        } else {
+                            // Fallback to text-based estimate
+                            (text.len() * 100).max(1000)
+                        };
+                        let estimated_total_chunks = (estimated_total_samples + hop_size - 1) / hop_size;
+                        
                         let progress = if total_samples > offset {
-                            // Progress based on what we've processed vs what we've received
+                            // Progress based on what we've processed vs estimated total
                             // Cap at 95% until we know the final total
-                            ((offset as f32 / total_samples as f32) * 100.0 * 0.95).min(95.0)
+                            ((offset as f32 / estimated_total_samples as f32) * 100.0 * 0.95).min(95.0)
                         } else {
                             0.0
                         };
@@ -733,7 +757,7 @@ pub async fn stream_ws(
                             "audio": chunk, 
                             "mel": mel_frame,
                             "chunk": chunk_number,
-                            "total_chunks": 0, // Will be updated when we know total
+                            "total_chunks": estimated_total_chunks, // Real-time estimate
                             "progress": progress,
                             "timestamp": timestamp,
                             "duration": chunk_duration,

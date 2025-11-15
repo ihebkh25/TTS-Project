@@ -12,17 +12,21 @@
     overflow: hidden;
     box-sizing: border-box;
     background: var(--bg);
+    /* Ensure full height within main-content */
+    min-height: 0;
 }
 
 /* Chat messages container - scrollable area */
 .chat-messages-container {
-    flex: 1;
+    flex: 1 1 auto;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     position: relative;
     min-height: 0;
     width: 100%;
+    /* Ensure it takes available space */
+    height: 100%;
 }
 
 .chat-messages {
@@ -39,6 +43,8 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+    /* Add padding at bottom so last message isn't hidden behind input */
+    padding-bottom: 1rem;
 }
 
 /* Center messages with max width like ChatGPT */
@@ -248,7 +254,8 @@
 
 /* Chat Form - Fixed at bottom */
 .chat-form {
-    position: relative;
+    position: sticky;
+    bottom: 0;
     width: 100%;
     padding: 1rem;
     background: var(--bg);
@@ -256,6 +263,15 @@
     flex-shrink: 0;
     box-sizing: border-box;
     z-index: 10;
+    /* Ensure form stays at bottom and doesn't scroll */
+    margin-top: 0;
+    /* Add backdrop blur for better visibility */
+    backdrop-filter: blur(10px);
+    background: rgba(21, 20, 20, 0.95);
+    /* Make form a flex container for proper ordering */
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
 .chat-form-input-wrapper {
@@ -272,6 +288,8 @@
     border-radius: 1.5rem;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
+    flex-shrink: 0;
+    order: 0; /* Input wrapper should be first */
 }
 
 .chat-form-input-wrapper:focus-within {
@@ -384,6 +402,8 @@
     border: 1px solid var(--border-lighter);
     border-radius: var(--radius-lg);
     flex-shrink: 0;
+    /* Ensure it's part of the form and doesn't break layout */
+    order: 1;
 }
 
 .voice-mode-controls.hidden {
@@ -1010,6 +1030,8 @@
     max-width: 768px;
     margin: 0.5rem auto 0;
     padding: 0 1rem;
+    flex-shrink: 0;
+    order: 2;
 }
 
 /* Responsive */

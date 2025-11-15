@@ -68,10 +68,15 @@ async function init() {
         // Set up tabs (this will load tab HTML files)
         await setupTabs(async (tabName, tabContent) => {
             // Re-initialize elements after tab content is loaded
+            // Use requestAnimationFrame to ensure DOM is ready
+            await new Promise(resolve => requestAnimationFrame(resolve));
             elements = initElements();
             
             // Only initialize if not already initialized
             if (initializedTabs.has(tabName)) {
+                // Still populate voices even if tab is already initialized
+                // (in case voices were loaded after tab initialization)
+                populateVoicesInSelects();
                 return;
             }
             
@@ -83,6 +88,8 @@ async function init() {
                     setCurrentConversationId
                 };
                 initChatTab(elements, chatState);
+                // Populate voices for voice mode language selector
+                populateVoicesInSelects();
                 initializedTabs.add(tabName);
                 setTimeout(() => {
                     scrollChatToBottom(elements.chatMessages);
@@ -112,6 +119,8 @@ async function init() {
                 };
                 initTtsTab(elements, ttsState);
                 setupCustomAudioPlayer(elements);
+                // Populate voices for this tab
+                populateVoicesInSelects();
                 initializedTabs.add(tabName);
             }
             if (tabName === 'stream') {
@@ -124,6 +133,8 @@ async function init() {
                     setCurrentStreamAudioBlob
                 };
                 initStreamTab(elements, streamState);
+                // Populate voices for this tab
+                populateVoicesInSelects();
                 initializedTabs.add(tabName);
             }
         });
@@ -139,6 +150,9 @@ async function init() {
         // Initialize initial tab (tts) after tabs are loaded
         // Re-initialize elements after tab content is loaded
         elements = initElements();
+        
+        // Populate language selects now that elements are available
+        populateVoicesInSelects();
         
         // Set up custom audio player
         setupCustomAudioPlayer(elements);
@@ -189,21 +203,45 @@ async function init() {
     }
 }
 
+// Populate voices in select elements
+function populateVoicesInSelects() {
+    if (!voices || voices.length === 0) {
+        console.warn('[Main] No voices available to populate');
+        return;
+    }
+    
+    // Re-initialize elements to get current select elements
+    const currentElements = initElements();
+    const selects = [
+        currentElements.ttsLanguage, 
+        currentElements.streamLanguage, 
+        currentElements.voiceModeLanguage
+    ].filter(Boolean);
+    
+    if (selects.length > 0) {
+        console.log('[Main] Populating', selects.length, 'language select(s) with', voices.length, 'voices');
+        populateLanguageSelects(selects, voices);
+    } else {
+        console.warn('[Main] No language select elements found to populate');
+    }
+}
+
 // Load voices from API
 async function loadVoices() {
     try {
         voices = await getVoices();
         
-        // Populate language selects
-        const selects = [elements.ttsLanguage, elements.streamLanguage, elements.voiceModeLanguage].filter(Boolean);
-        populateLanguageSelects(selects, voices);
-        
         // Load voice details
         voiceDetails = await getVoiceDetails();
         
+        // Note: populateLanguageSelects will be called after tabs are loaded
+        // via populateVoicesInSelects() to ensure elements exist
+        
     } catch (error) {
         console.error('Error loading voices:', error);
-        showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
+        if (elements && elements.serverInfo) {
+            showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
+        }
     }
 }
 

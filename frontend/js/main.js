@@ -248,8 +248,8 @@ async function loadVoices() {
 // Set up download button handlers
 function setupDownloadHandlers() {
     // TTS download button
-    if (elements.downloadTtsBtn) {
-        elements.downloadTtsBtn.addEventListener('click', () => {
+    if (elements.ttsDownloadBtn) {
+        elements.ttsDownloadBtn.addEventListener('click', () => {
             try {
                 if (currentAudioBlob) {
                     downloadAudio(currentAudioBlob, `tts-${Date.now()}.wav`);

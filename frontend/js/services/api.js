@@ -129,6 +129,13 @@ export async function generateTTS(text, language, speaker = null) {
         requestBody.speaker = speaker;
     }
     
+    console.log('[API] Generating TTS:', { 
+        textLength: text.length, 
+        language, 
+        speaker,
+        url: `${getApiBase()}/tts`
+    });
+    
     const response = await fetchWithErrorHandling(`${getApiBase()}/tts`, {
         method: 'POST',
         headers: {
@@ -138,7 +145,27 @@ export async function generateTTS(text, language, speaker = null) {
         signal: AbortSignal.timeout(REQUEST.TTS_TIMEOUT)
     });
     
-    return await response.json();
+    const data = await response.json();
+    console.log('[API] TTS Response:', {
+        hasAudio: !!data.audio_base64,
+        audioLength: data.audio_base64?.length || 0,
+        duration: data.duration_ms,
+        sampleRate: data.sample_rate,
+        keys: Object.keys(data)
+    });
+    
+    // Validate response structure
+    if (!data.audio_base64) {
+        throw new Error('Invalid response: missing audio_base64 field');
+    }
+    if (typeof data.duration_ms !== 'number') {
+        console.warn('[API] TTS response missing or invalid duration_ms');
+    }
+    if (typeof data.sample_rate !== 'number') {
+        console.warn('[API] TTS response missing or invalid sample_rate');
+    }
+    
+    return data;
 }
 
 /**

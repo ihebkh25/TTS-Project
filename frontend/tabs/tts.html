@@ -61,14 +61,11 @@
         </div>
         <audio id="ttsAudio" class="hidden"></audio>
     </div>
-    <div id="ttsSpectrogram" class="spectrogram-container"></div>
-    
-    <!-- Templates for dynamic content -->
-    <template id="spectrogramWrapperTemplate">
+    <div id="ttsSpectrogram" class="spectrogram-container hidden">
         <div class="spectrogram-wrapper">
-            <h4>Mel Spectrogram:</h4>
-            <img src="" alt="Spectrogram" loading="lazy" class="spectrogram-image">
+            <h4>Real-time Spectrogram:</h4>
+            <canvas id="ttsSpectrogramCanvas" class="spectrogram-canvas"></canvas>
         </div>
-    </template>
+    </div>
 </section>
 

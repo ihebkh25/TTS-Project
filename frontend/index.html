@@ -111,7 +111,23 @@
             <div id="streamProgress" class="progress-bar hidden">
                 <div class="progress-fill"></div>
             </div>
-            <audio id="streamAudio" class="audio-player hidden" controls></audio>
+            <div id="streamSpectrogram" class="spectrogram-container hidden">
+                <div class="spectrogram-wrapper">
+                    <h4>Real-time Mel Spectrogram:</h4>
+                    <canvas id="streamSpectrogramCanvas" class="spectrogram-canvas"></canvas>
+                </div>
+            </div>
+            <div id="streamAudioContainer" class="hidden">
+                <audio id="streamAudio" class="audio-player" controls></audio>
+                <button class="btn btn-secondary" id="streamDownloadBtn" style="margin-top: var(--space-sm);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download Audio
+                </button>
+            </div>
         </section>
 
         <!-- AI Chat Section - ENHANCED -->
@@ -189,6 +205,9 @@
                                 <select id="voiceModeLanguage" class="voice-language-select" name="language">
                                     <option value="">Loading...</option>
                                 </select>
+                            </div>
+                            <div class="voice-mode-vad-info" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+                                <span>🎤 Auto-stop enabled (1.5s silence)</span>
                             </div>
                         </div>
                         <div class="voice-mode-content">

@@ -14,6 +14,9 @@ let currentConversationId = null;
 let voices = [];
 let voiceDetails = [];
 let currentAudioBlob = null;
+let currentStreamAudioBlob = null; // For streaming tab download
+let streamMelFrames = []; // Accumulate mel frames for real-time visualization
+let streamSpectrogramCtx = null; // Canvas context for real-time spectrogram
 
 // DOM Elements - Initialize after DOM is ready
 let elements = {};
@@ -67,7 +70,11 @@ function initElements() {
         // Audio and Media
         ttsAudio: document.getElementById('ttsAudio'),
         streamAudio: document.getElementById('streamAudio'),
+        streamAudioContainer: document.getElementById('streamAudioContainer'),
+        streamDownloadBtn: document.getElementById('streamDownloadBtn'),
         ttsSpectrogram: document.getElementById('ttsSpectrogram'),
+        streamSpectrogram: document.getElementById('streamSpectrogram'),
+        streamSpectrogramCanvas: document.getElementById('streamSpectrogramCanvas'),
         chatMessages: document.getElementById('chatMessages'),
         streamProgress: document.getElementById('streamProgress'),
         
@@ -354,6 +361,11 @@ function setupEventListeners() {
         elements.downloadTtsBtn.addEventListener('click', downloadTtsAudio);
     }
     
+    // Streaming download button
+    if (elements.streamDownloadBtn) {
+        elements.streamDownloadBtn.addEventListener('click', downloadStreamAudio);
+    }
+    
     // Clear chat button
     if (elements.clearChatBtn) {
         elements.clearChatBtn.addEventListener('click', clearChat);
@@ -494,8 +506,19 @@ async function handleStreamSubmit(e) {
         setButtonState(elements.streamBtn, false, 'Start Streaming');
         showStatus(elements.streamStatus, 'info', 'Streaming stopped.');
         elements.streamProgress.classList.add('hidden');
+        // Keep spectrogram and audio visible if they exist
         return;
     }
+    
+    // Reset UI elements for new stream
+    if (elements.streamSpectrogram) {
+        elements.streamSpectrogram.classList.add('hidden');
+    }
+    if (elements.streamAudioContainer) {
+        elements.streamAudioContainer.classList.add('hidden');
+    }
+    currentStreamAudioBlob = null;
+    streamMelFrames = [];
     
     setButtonState(elements.streamBtn, true, 'Connecting...');
     showStatus(elements.streamStatus, 'info', 'Connecting to stream...');
@@ -581,6 +604,75 @@ async function handleChatSubmit(e) {
     }
 }
 
+// Initialize streaming spectrogram canvas
+function initStreamSpectrogram() {
+    if (!elements.streamSpectrogramCanvas) return;
+    
+    const canvas = elements.streamSpectrogramCanvas;
+    const container = elements.streamSpectrogram;
+    const containerWidth = container.offsetWidth || 800;
+    
+    canvas.width = containerWidth;
+    canvas.height = 300;
+    
+    streamSpectrogramCtx = canvas.getContext('2d');
+    streamMelFrames = [];
+    
+    // Clear canvas with black background
+    if (streamSpectrogramCtx) {
+        streamSpectrogramCtx.fillStyle = '#000';
+        streamSpectrogramCtx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+// Visualize mel frame in real-time
+function visualizeMelFrame(melFrame) {
+    if (!streamSpectrogramCtx || !elements.streamSpectrogramCanvas || melFrame.length === 0) return;
+    
+    const canvas = elements.streamSpectrogramCanvas;
+    const n_mels = melFrame.length;
+    const frameWidth = 2; // Width of each frame in pixels
+    const melHeight = canvas.height;
+    
+    // Add frame to accumulation
+    streamMelFrames.push([...melFrame]);
+    
+    // Keep only last N frames that fit on canvas
+    const maxFrames = Math.floor(canvas.width / frameWidth);
+    if (streamMelFrames.length > maxFrames) {
+        streamMelFrames.shift(); // Remove oldest frame
+    }
+    
+    // Clear canvas
+    streamSpectrogramCtx.fillStyle = '#000';
+    streamSpectrogramCtx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw all accumulated frames
+    const binHeight = melHeight / n_mels;
+    streamMelFrames.forEach((frame, frameIndex) => {
+        const x = frameIndex * frameWidth;
+        
+        // Normalize mel values for visualization (per-frame normalization)
+        const min = Math.min(...frame);
+        const max = Math.max(...frame);
+        const range = max - min || 1;
+        
+        // Draw each mel bin
+        for (let i = 0; i < n_mels; i++) {
+            const value = frame[i];
+            const normalized = (value - min) / range;
+            
+            // Use a colormap (blue to cyan to green)
+            const hue = 240 - (normalized * 120); // Blue (240) to Cyan (120)
+            const saturation = 100;
+            const lightness = 20 + (normalized * 60); // Dark to bright
+            
+            streamSpectrogramCtx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+            streamSpectrogramCtx.fillRect(x, melHeight - (i + 1) * binHeight, frameWidth, binHeight);
+        }
+    });
+}
+
 // WebSocket Streaming Implementation
 async function startWebSocketStream(text, language) {
     const encodedText = encodeURIComponent(text);
@@ -593,6 +685,11 @@ async function startWebSocketStream(text, language) {
         let sampleRate = 22050; // Default sample rate
         let totalChunks = 0;
         let receivedChunks = 0;
+
+        // Initialize spectrogram visualization
+        initStreamSpectrogram();
+        elements.streamSpectrogram.classList.remove('hidden');
+        currentStreamAudioBlob = null; // Reset download blob
 
         ws.onopen = () => {
             isStreaming = true;
@@ -622,6 +719,11 @@ async function startWebSocketStream(text, language) {
                     receivedChunks++;
                     updateStreamProgress(receivedChunks);
                 }
+                
+                // Visualize mel spectrogram frame in real-time
+                if (data.mel && Array.isArray(data.mel)) {
+                    visualizeMelFrame(data.mel);
+                }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
                     showStatus(elements.streamStatus, 'error', 
@@ -635,10 +737,18 @@ async function startWebSocketStream(text, language) {
                 try {
                     // Convert f32 audio samples to WAV and encode as base64
                     const wavBase64 = convertF32ArrayToWavBase64(audioSamples, sampleRate);
+                    
+                    // Store blob for download
+                    base64ToBlob(wavBase64, 'audio/wav').then(blob => {
+                        currentStreamAudioBlob = blob;
+                    });
+                    
                     playAudio(elements.streamAudio, wavBase64);
+                    elements.streamAudioContainer.classList.remove('hidden');
                     
                     showStatus(elements.streamStatus, 'success', 
-                        'Streaming complete! Audio ready to play.');
+                        `Streaming complete! Audio ready to play.<br>
+                         Received ${receivedChunks} chunks, ${audioSamples.length} samples total.`);
                     showToast('success', 'Streaming complete!');
                 } catch (error) {
                     console.error('Error converting audio:', error);
@@ -650,6 +760,7 @@ async function startWebSocketStream(text, language) {
                 showStatus(elements.streamStatus, 'error', 
                     'No audio data received from stream.');
                 showToast('error', 'No audio data received');
+                elements.streamSpectrogram.classList.add('hidden');
             }
             isStreaming = false;
             currentWebSocket = null;
@@ -946,6 +1057,26 @@ async function downloadTtsAudio() {
     
     showStatus(elements.ttsStatus, 'success', 'Audio downloaded!');
     showToast('success', 'Audio downloaded successfully!');
+}
+
+// Download streaming audio
+async function downloadStreamAudio() {
+    if (!currentStreamAudioBlob) {
+        showStatus(elements.streamStatus, 'error', 'No audio available to download');
+        return;
+    }
+    
+    const url = URL.createObjectURL(currentStreamAudioBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stream-${Date.now()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showStatus(elements.streamStatus, 'success', 'Audio downloaded!');
+    showToast('success', 'Streaming audio downloaded successfully!');
 }
 
 // Spectrogram Display
@@ -1614,6 +1745,23 @@ function setupVoiceMode() {
     let dataArray = null;
     let animationFrameId = null;
     let currentConversationId = null;
+    
+    // VAD (Voice Activity Detection) configuration
+    const VAD_CONFIG = {
+        enabled: true, // Enable/disable VAD
+        silenceThreshold: 30, // Audio level threshold (0-255, lower = more sensitive)
+        silenceDuration: 1500, // Milliseconds of silence before auto-stop
+        checkInterval: 100, // How often to check audio levels (ms)
+        minRecordingDuration: 500, // Minimum recording duration before VAD can trigger (ms)
+    };
+    
+    let vadState = {
+        lastVoiceTime: null,
+        silenceStartTime: null,
+        isVoiceDetected: false,
+        vadCheckInterval: null,
+        recordingStartTime: null,
+    };
 
     // Initialize audio context for frequency analysis
     try {
@@ -1651,6 +1799,118 @@ function setupVoiceMode() {
     resizeCanvases();
     window.addEventListener('resize', resizeCanvases);
 
+    // VAD: Calculate average audio level from frequency data
+    function calculateAudioLevel() {
+        if (!analyser || !dataArray) return 0;
+        
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate RMS (Root Mean Square) for better voice detection
+        let sum = 0;
+        let count = 0;
+        
+        // Focus on speech frequency range (roughly 300-3400 Hz)
+        // With fftSize=256 and sampleRate=44100, each bin is ~86 Hz
+        // So bins 3-40 roughly cover speech frequencies
+        const speechStartBin = 3;
+        const speechEndBin = Math.min(40, dataArray.length);
+        
+        for (let i = speechStartBin; i < speechEndBin; i++) {
+            sum += dataArray[i] * dataArray[i]; // Square for RMS
+            count++;
+        }
+        
+        const rms = Math.sqrt(sum / count);
+        return rms;
+    }
+    
+    // VAD: Check for voice activity and handle auto-stop
+    function checkVoiceActivity() {
+        if (!isRecording || !VAD_CONFIG.enabled) return;
+        
+        const audioLevel = calculateAudioLevel();
+        const now = Date.now();
+        const recordingDuration = now - vadState.recordingStartTime;
+        
+        // Check if audio level indicates voice activity
+        const hasVoice = audioLevel > VAD_CONFIG.silenceThreshold;
+        
+        if (hasVoice) {
+            // Voice detected
+            vadState.isVoiceDetected = true;
+            vadState.lastVoiceTime = now;
+            vadState.silenceStartTime = null;
+            
+            // Update status to show voice is detected
+            if (elements.voiceMicStatus && elements.voiceMicStatus.textContent.includes('Listening')) {
+                // Keep listening status, maybe add visual indicator
+            }
+        } else {
+            // Silence detected
+            if (vadState.isVoiceDetected) {
+                // This is the start of silence after voice
+                if (!vadState.silenceStartTime) {
+                    vadState.silenceStartTime = now;
+                }
+                
+                const silenceDuration = now - vadState.silenceStartTime;
+                
+                // Only auto-stop if:
+                // 1. We've recorded for at least minimum duration
+                // 2. Silence has lasted long enough
+                if (recordingDuration >= VAD_CONFIG.minRecordingDuration && 
+                    silenceDuration >= VAD_CONFIG.silenceDuration) {
+                    
+                    console.log('VAD: Auto-stopping due to silence', {
+                        silenceDuration,
+                        audioLevel,
+                        recordingDuration
+                    });
+                    
+                    // Auto-stop recording
+                    if (recognition && isRecording) {
+                        recognition.stop();
+                        elements.voiceMicStatus.textContent = 'Processing...';
+                    }
+                    
+                    // Stop VAD checking
+                    stopVAD();
+                } else if (silenceDuration > VAD_CONFIG.silenceDuration * 0.5) {
+                    // Show warning that silence is detected (50% of threshold)
+                    if (elements.voiceMicStatus && !elements.voiceMicStatus.textContent.includes('...')) {
+                        elements.voiceMicStatus.textContent = 'Listening... (silence detected)';
+                    }
+                }
+            }
+        }
+    }
+    
+    // Start VAD monitoring
+    function startVAD() {
+        if (!VAD_CONFIG.enabled || vadState.vadCheckInterval) return;
+        
+        vadState.recordingStartTime = Date.now();
+        vadState.lastVoiceTime = null;
+        vadState.silenceStartTime = null;
+        vadState.isVoiceDetected = false;
+        
+        vadState.vadCheckInterval = setInterval(() => {
+            checkVoiceActivity();
+        }, VAD_CONFIG.checkInterval);
+        
+        console.log('VAD started', VAD_CONFIG);
+    }
+    
+    // Stop VAD monitoring
+    function stopVAD() {
+        if (vadState.vadCheckInterval) {
+            clearInterval(vadState.vadCheckInterval);
+            vadState.vadCheckInterval = null;
+        }
+        vadState.isVoiceDetected = false;
+        vadState.silenceStartTime = null;
+    }
+    
     // Frequency visualization for microphone
     function drawMicFrequency() {
         if (!isRecording || !analyser || !micCtx) return;
@@ -1665,7 +1925,11 @@ function setupVoiceMode() {
         const bars = dataArray.length;
         const angleStep = (Math.PI * 2) / bars;
         
-        micCtx.strokeStyle = '#6366f1';
+        // Use color to indicate voice activity (green when voice detected)
+        const audioLevel = calculateAudioLevel();
+        const hasVoice = audioLevel > VAD_CONFIG.silenceThreshold;
+        micCtx.strokeStyle = hasVoice ? '#10b981' : '#6366f1'; // Green when voice, blue when silent
+        
         micCtx.lineWidth = 2;
         micCtx.beginPath();
         
@@ -1764,6 +2028,11 @@ function setupVoiceMode() {
             elements.voiceMicButton.classList.add('recording');
             elements.voiceMicStatus.textContent = 'Listening...';
             
+            // Start VAD monitoring
+            if (microphone && analyser) {
+                startVAD();
+            }
+            
             // Start frequency visualization if microphone stream is available
             if (microphone && analyser) {
                 drawMicFrequency();
@@ -1810,6 +2079,9 @@ function setupVoiceMode() {
             isRecording = false;
             elements.voiceMicButton.classList.remove('recording');
             
+            // Stop VAD on error
+            stopVAD();
+            
             if (microphone) {
                 microphone.disconnect();
                 microphone = null;
@@ -1849,6 +2121,9 @@ function setupVoiceMode() {
             isRecording = false;
             elements.voiceMicButton.classList.remove('recording');
             
+            // Stop VAD monitoring
+            stopVAD();
+            
             // Cleanup microphone (but keep stream for potential reuse)
             if (microphone) {
                 microphone.disconnect();
@@ -1872,7 +2147,7 @@ function setupVoiceMode() {
         // Store recognition globally for exit function
         window.voiceModeRecognition = recognition;
 
-        // Function to request microphone access
+        // Function to request microphone access with improved error handling
         async function requestMicrophoneAccess() {
             // Check if we already have a stream
             if (window.voiceModeStream && window.voiceModeStream.active) {
@@ -1889,18 +2164,37 @@ function setupVoiceMode() {
                 const errorMsg = 'Microphone access is not supported in this browser. Please use a modern browser like Chrome, Edge, Firefox, or Opera.';
                 showStatus(elements.chatStatus, 'error', errorMsg);
                 elements.voiceMicStatus.textContent = 'Not supported';
+                showToast('error', errorMsg);
                 return false;
             }
 
             // Check permissions API if available
+            let permissionDenied = false;
             if (navigator.permissions) {
                 try {
                     const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
                     console.log('Microphone permission status:', permissionStatus.state);
                     
                     if (permissionStatus.state === 'denied') {
-                        throw new Error('PermissionDeniedError');
+                        permissionDenied = true;
+                        const errorMsg = `Microphone permission denied. Please enable it in your browser settings:
+                        <br><strong>Chrome/Edge:</strong> Click the lock icon in the address bar → Site settings → Microphone → Allow
+                        <br><strong>Firefox:</strong> Click the lock icon → Permissions → Microphone → Allow
+                        <br><strong>Safari:</strong> Safari → Preferences → Websites → Microphone → Allow`;
+                        showStatus(elements.chatStatus, 'error', errorMsg);
+                        elements.voiceMicStatus.textContent = 'Permission denied - Check settings';
+                        showToast('error', 'Microphone permission denied. Check browser settings.');
+                        return false;
                     }
+                    
+                    // Listen for permission changes
+                    permissionStatus.onchange = () => {
+                        console.log('Permission status changed to:', permissionStatus.state);
+                        if (permissionStatus.state === 'granted') {
+                            showStatus(elements.chatStatus, 'success', 'Microphone permission granted! You can now use voice mode.');
+                            showToast('success', 'Microphone permission granted!');
+                        }
+                    };
                 } catch (err) {
                     // Permissions API might not be supported, continue anyway
                     console.log('Permissions API not fully supported:', err);
@@ -1989,6 +2283,9 @@ function setupVoiceMode() {
 
         // Function to cleanup microphone stream
         function cleanupMicrophone() {
+            // Stop VAD
+            stopVAD();
+            
             if (window.voiceModeStream) {
                 window.voiceModeStream.getTracks().forEach(track => {
                     track.stop();
@@ -2043,6 +2340,7 @@ function setupVoiceMode() {
                 console.log('Stopping speech recognition...');
                 recognition.stop();
                 cleanupMicrophone();
+                // VAD will be stopped in recognition.onend
             }
         });
 

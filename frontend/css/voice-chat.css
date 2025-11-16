@@ -194,6 +194,18 @@ section.tab-content.active[data-tab="voice-chat"] {
     border-radius: var(--radius-lg);
     background: var(--surface);
     border: 1px solid var(--border-lighter);
+    z-index: 1;
+}
+
+#voiceBotSpectrogram {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-lg);
+    pointer-events: none;
+    z-index: 2;
 }
 
 .bot-status {

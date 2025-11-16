@@ -19,6 +19,7 @@ export function initElements() {
         chatInput: document.getElementById('chatInput'),
         chatMicBtn: document.getElementById('chatMicBtn'),
         voiceModeToggleBtn: document.getElementById('voiceModeToggleBtn'),
+        useVoiceModeBtn: document.getElementById('useVoiceModeBtn'),
         exitVoiceModeBtn: document.getElementById('exitVoiceModeBtn'),
         voiceInputSpectrogram: document.getElementById('voiceInputSpectrogram'),
         voiceModeControls: document.getElementById('voiceModeControls'),
@@ -73,6 +74,18 @@ export function initElements() {
         streamSpeed: document.getElementById('streamSpeed'),
         streamCurrentTime: document.getElementById('streamCurrentTime'),
         streamDuration: document.getElementById('streamDuration'),
+
+        // Voice Chat tab elements
+        voiceChatMicBtn: document.getElementById('voiceChatMicBtn'),
+        voiceChatMicStatus: document.getElementById('voiceChatMicStatus'),
+        voiceChatMicCanvas: document.getElementById('voiceMicCanvas'),
+        voiceChatBotCanvas: document.getElementById('voiceResponseCanvas'),
+        voiceBotSpectrogram: document.getElementById('voiceBotSpectrogram'),
+        voiceChatStatus: document.getElementById('voiceChatStatus'),
+        voiceChatLanguage: document.getElementById('voiceChatLanguage'),
+        voiceTranscriptContainer: document.getElementById('voiceTranscriptContainer'),
+        voiceTranscriptText: document.getElementById('voiceTranscriptText'),
+        voiceConversationLog: document.getElementById('voiceConversationLog'),
         
         // Groups
         speakerGroup: document.getElementById('speakerGroup'),

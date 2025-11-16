@@ -172,6 +172,29 @@ export function initChatTab(elements, state) {
     // Set up event listeners
     function setupEventListeners() {
         addEventListenerWithCleanup(elements.chatForm, 'submit', handleChatSubmit);
+
+        // Ensure right-side button uses headset icon (in case of cached HTML)
+        if (elements.useVoiceModeBtn) {
+            elements.useVoiceModeBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M3 11a9 9 0 0 1 18 0"></path>
+                    <path d="M21 13v3a3 3 0 0 1-3 3h-2a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h2"></path>
+                    <path d="M3 13v3a3 3 0 0 0 3 3h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H6"></path>
+                    <path d="M12 21a3 3 0 0 0 3-3"></path>
+                </svg>
+            `;
+            elements.useVoiceModeBtn.setAttribute('aria-label', 'Use Voice Mode');
+            elements.useVoiceModeBtn.setAttribute('title', 'Use Voice Mode');
+        }
+
+        // Navigate to Voice Mode tab
+        if (elements.useVoiceModeBtn) {
+            const goVoice = () => {
+                const btn = document.querySelector('.tab-btn[data-tab="voice-chat"]');
+                if (btn) btn.click();
+            };
+            addEventListenerWithCleanup(elements.useVoiceModeBtn, 'click', goVoice);
+        }
         
         // Enter key support for chat
         const keypressHandler = (e) => {

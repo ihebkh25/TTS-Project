@@ -12,6 +12,7 @@ import { initTtsTab } from './tabs/tts.js';
 import { initStreamTab } from './tabs/stream.js';
 import { initChatTab } from './tabs/chat.js';
 import { initServerTab } from './tabs/server.js';
+import { initVoiceChatTab } from './tabs/voice-chat.js';
 
 // Global state
 let elements = {};
@@ -108,6 +109,17 @@ async function init() {
                 setTimeout(() => {
                     scrollChatToBottom(elements.chatMessages);
                 }, 100);
+            }
+            if (tabName === 'voice-chat') {
+                // Initialize voice chat tab
+                const voiceState = {
+                    get currentConversationId() { return currentConversationId; },
+                    set currentConversationId(value) { currentConversationId = value; },
+                    setCurrentConversationId
+                };
+                initVoiceChatTab(elements, voiceState);
+                populateVoicesInSelects();
+                initializedTabs.add(tabName);
             }
             
             if (tabName === 'server') {
@@ -223,7 +235,8 @@ function populateVoicesInSelects() {
     const selects = [
         currentElements.ttsLanguage, 
         currentElements.streamLanguage, 
-        currentElements.voiceModeLanguage
+        currentElements.voiceModeLanguage,
+        currentElements.voiceChatLanguage
     ].filter(Boolean);
     
     if (selects.length > 0) {

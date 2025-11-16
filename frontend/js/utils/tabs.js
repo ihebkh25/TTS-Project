@@ -7,6 +7,7 @@ export const tabConfig = {
     tts: { title: 'Text-to-Speech', desc: 'Convert text to natural-sounding speech', file: 'tabs/tts.html' },
     stream: { title: 'Real-time Streaming', desc: 'Stream audio in real-time', file: 'tabs/stream.html' },
     chat: { title: 'AI Chat', desc: 'Chat with AI assistant', file: 'tabs/chat.html' },
+    'voice-chat': { title: 'Voice Mode', desc: 'Real-time voice conversation', file: 'tabs/voice-chat.html' },
     server: { title: 'Server Information', desc: 'Server status and configuration', file: 'tabs/server.html' }
 };
 

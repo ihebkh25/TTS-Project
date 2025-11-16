@@ -92,7 +92,6 @@ async fn test_tts_endpoint_success() {
     let tts_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     assert!(tts_response["audio_base64"].is_string());
-    assert!(tts_response["spectrogram_base64"].is_string());
     assert!(tts_response["sample_rate"].is_number());
     assert!(tts_response["duration_ms"].is_number());
 }

@@ -22,6 +22,7 @@ let currentStreamAudioBlob = null;
 let currentConversationId = null;
 let isStreaming = false;
 let currentWebSocket = null;
+const initializedTabs = new Set(); // Track initialized tabs
 
 // State management functions
 function setCurrentAudioBlob(blob) {
@@ -64,15 +65,85 @@ async function init() {
         console.log('[Main] DOM elements initialized:', Object.keys(elements).length, 'elements');
         
         updateLoadingStatus('Setting up tabs...');
-        // Set up tabs
-        setupTabs((tabName, tabContent) => {
+        // Set up tabs (this will load tab HTML files)
+        await setupTabs(async (tabName, tabContent) => {
+            // Re-initialize elements after tab content is loaded
+            // Use requestAnimationFrame to ensure DOM is ready
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            elements = initElements();
+            
+            // Cleanup server tab when switching away from it
+            const previousTab = document.querySelector('.tab-content.active[data-tab]');
+            if (previousTab && previousTab.getAttribute('data-tab') === 'server' && tabName !== 'server' && window.serverTabCleanup) {
+                window.serverTabCleanup();
+                window.serverTabCleanup = null;
+            }
+            
+            // Only initialize if not already initialized
+            if (initializedTabs.has(tabName)) {
+                // Still populate voices even if tab is already initialized
+                // (in case voices were loaded after tab initialization)
+                populateVoicesInSelects();
+                
+                // Re-initialize audio player for TTS tab when returning to it
+                if (tabName === 'tts') {
+                    setupCustomAudioPlayer(elements);
+                    // Resume AudioContext if it exists and is suspended
+                    resumeTtsAudioContext(elements);
+                }
+                return;
+            }
+            
             if (tabName === 'chat') {
+                // Initialize chat tab
+                const chatState = {
+                    get currentConversationId() { return currentConversationId; },
+                    set currentConversationId(value) { currentConversationId = value; },
+                    setCurrentConversationId
+                };
+                initChatTab(elements, chatState);
+                // Populate voices for dictating mode language selector
+                populateVoicesInSelects();
+                initializedTabs.add(tabName);
                 setTimeout(() => {
                     scrollChatToBottom(elements.chatMessages);
                 }, 100);
             }
+            
             if (tabName === 'server') {
-                // Server tab will check status on initialization
+                // Initialize server tab
+                const serverTab = initServerTab(elements);
+                // Store cleanup function for when tab changes
+                if (serverTab && serverTab.cleanup) {
+                    window.serverTabCleanup = serverTab.cleanup;
+                }
+                initializedTabs.add(tabName);
+            }
+            if (tabName === 'tts') {
+                // Initialize TTS tab
+                const ttsState = {
+                    setCurrentAudioBlob,
+                    voiceDetails
+                };
+                initTtsTab(elements, ttsState);
+                setupCustomAudioPlayer(elements);
+                // Populate voices for this tab
+                populateVoicesInSelects();
+                initializedTabs.add(tabName);
+            }
+            if (tabName === 'stream') {
+                // Initialize stream tab
+                const streamState = {
+                    get isStreaming() { return isStreaming; },
+                    set isStreaming(value) { isStreaming = value; },
+                    get currentWebSocket() { return currentWebSocket; },
+                    set currentWebSocket(value) { currentWebSocket = value; },
+                    setCurrentStreamAudioBlob
+                };
+                initStreamTab(elements, streamState);
+                // Populate voices for this tab
+                populateVoicesInSelects();
+                initializedTabs.add(tabName);
             }
         });
         
@@ -84,35 +155,22 @@ async function init() {
         // Load voices dynamically (must be before tab initialization for voiceDetails)
         await loadVoices();
         
+        // Initialize initial tab (tts) after tabs are loaded
+        // Re-initialize elements after tab content is loaded
+        elements = initElements();
+        
+        // Populate language selects now that elements are available
+        populateVoicesInSelects();
+        
         // Set up custom audio player
         setupCustomAudioPlayer(elements);
         
-        // Initialize tab modules
+        // Initialize initial tab modules (tts is loaded by default)
         const ttsState = {
             setCurrentAudioBlob,
             voiceDetails
         };
         initTtsTab(elements, ttsState);
-        
-        // Stream state with getters/setters for reactivity
-        const streamState = {
-            get isStreaming() { return isStreaming; },
-            set isStreaming(value) { isStreaming = value; },
-            get currentWebSocket() { return currentWebSocket; },
-            set currentWebSocket(value) { currentWebSocket = value; },
-            setCurrentStreamAudioBlob
-        };
-        initStreamTab(elements, streamState);
-        
-        // Chat state with getters/setters for reactivity
-        const chatState = {
-            get currentConversationId() { return currentConversationId; },
-            set currentConversationId(value) { currentConversationId = value; },
-            setCurrentConversationId
-        };
-        initChatTab(elements, chatState);
-        
-        const serverTab = initServerTab(elements);
         
         updateLoadingStatus('Setting up handlers...');
         // Set up download button handlers
@@ -153,29 +211,53 @@ async function init() {
     }
 }
 
+// Populate voices in select elements
+function populateVoicesInSelects() {
+    if (!voices || voices.length === 0) {
+        console.warn('[Main] No voices available to populate');
+        return;
+    }
+    
+    // Re-initialize elements to get current select elements
+    const currentElements = initElements();
+    const selects = [
+        currentElements.ttsLanguage, 
+        currentElements.streamLanguage, 
+        currentElements.voiceModeLanguage
+    ].filter(Boolean);
+    
+    if (selects.length > 0) {
+        console.log('[Main] Populating', selects.length, 'language select(s) with', voices.length, 'voices');
+        populateLanguageSelects(selects, voices);
+    } else {
+        console.warn('[Main] No language select elements found to populate');
+    }
+}
+
 // Load voices from API
 async function loadVoices() {
     try {
         voices = await getVoices();
         
-        // Populate language selects
-        const selects = [elements.ttsLanguage, elements.streamLanguage, elements.voiceModeLanguage].filter(Boolean);
-        populateLanguageSelects(selects, voices);
-        
         // Load voice details
         voiceDetails = await getVoiceDetails();
         
+        // Note: populateLanguageSelects will be called after tabs are loaded
+        // via populateVoicesInSelects() to ensure elements exist
+        
     } catch (error) {
         console.error('Error loading voices:', error);
+        if (elements && elements.serverInfo) {
         showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
+        }
     }
 }
 
 // Set up download button handlers
 function setupDownloadHandlers() {
     // TTS download button
-    if (elements.downloadTtsBtn) {
-        elements.downloadTtsBtn.addEventListener('click', () => {
+    if (elements.ttsDownloadBtn) {
+        elements.ttsDownloadBtn.addEventListener('click', () => {
             try {
                 if (currentAudioBlob) {
                     downloadAudio(currentAudioBlob, `tts-${Date.now()}.wav`);
@@ -238,6 +320,30 @@ async function checkServerStatus() {
         }
     }
 }
+
+// Resume TTS AudioContext if suspended
+function resumeTtsAudioContext(elements) {
+    if (elements.ttsAudio && elements.ttsAudio._audioContext) {
+        const audioContext = elements.ttsAudio._audioContext;
+        if (audioContext.state === 'suspended') {
+            console.log('[Main] Resuming suspended AudioContext');
+            audioContext.resume().catch(err => {
+                console.warn('[Main] Error resuming AudioContext:', err);
+            });
+        }
+    }
+}
+
+// Handle visibility change to resume AudioContext when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && elements && elements.ttsAudio) {
+        // Check if TTS tab is active
+        const ttsTab = document.querySelector('.tab-content.active[data-tab="tts"]');
+        if (ttsTab) {
+            resumeTtsAudioContext(elements);
+        }
+    }
+});
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);

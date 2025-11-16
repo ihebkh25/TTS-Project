@@ -13,69 +13,102 @@ const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
 export function setupCustomAudioPlayer(elements) {
     if (!elements.ttsPlayPause || !elements.ttsProgress || !elements.ttsAudio) return;
     
+    // Prevent duplicate setup - check if already initialized
+    if (elements.ttsAudio._playerInitialized) {
+        console.log('[AudioPlayer] Audio player already initialized, skipping duplicate setup');
+        return;
+    }
+    
+    // Mark as initialized
+    elements.ttsAudio._playerInitialized = true;
+    
     // Play/Pause button
-    elements.ttsPlayPause.addEventListener('click', () => {
+    const playPauseHandler = () => {
         if (elements.ttsAudio.paused) {
-            elements.ttsAudio.play();
+            elements.ttsAudio.play().catch(err => {
+                console.warn('[AudioPlayer] Play failed:', err);
+            });
         } else {
             elements.ttsAudio.pause();
         }
-    });
+    };
+    elements.ttsPlayPause.addEventListener('click', playPauseHandler);
     
-    // Progress bar
-    elements.ttsProgress.addEventListener('input', (e) => {
+    // Progress bar - handle both input (while dragging) and change (on release)
+    let isDragging = false;
+    
+    const progressInputHandler = (e) => {
+        isDragging = true;
         const time = (e.target.value / 100) * elements.ttsAudio.duration;
-        elements.ttsAudio.currentTime = time;
-    });
+        if (!isNaN(time) && isFinite(time)) {
+            elements.ttsAudio.currentTime = time;
+        }
+    };
+    elements.ttsProgress.addEventListener('input', progressInputHandler);
+    
+    const progressChangeHandler = (e) => {
+        isDragging = false;
+        const time = (e.target.value / 100) * elements.ttsAudio.duration;
+        if (!isNaN(time) && isFinite(time)) {
+            elements.ttsAudio.currentTime = time;
+        }
+    };
+    elements.ttsProgress.addEventListener('change', progressChangeHandler);
     
     // Speed control
     if (elements.ttsSpeed) {
-        elements.ttsSpeed.addEventListener('change', (e) => {
+        const speedHandler = (e) => {
             const speed = parseFloat(e.target.value);
             if (elements.ttsAudio) {
                 elements.ttsAudio.playbackRate = speed;
             }
-        });
+        };
+        elements.ttsSpeed.addEventListener('change', speedHandler);
     }
     
     // Audio events
-    elements.ttsAudio.addEventListener('loadedmetadata', () => {
+    const loadedMetadataHandler = () => {
         if (elements.ttsDuration) {
             elements.ttsDuration.textContent = formatTime(elements.ttsAudio.duration);
         }
-    });
+    };
+    elements.ttsAudio.addEventListener('loadedmetadata', loadedMetadataHandler);
     
-    elements.ttsAudio.addEventListener('timeupdate', () => {
-        if (elements.ttsProgress) {
+    const timeUpdateHandler = () => {
+        if (elements.ttsProgress && !isDragging) {
             const progress = (elements.ttsAudio.currentTime / elements.ttsAudio.duration) * 100;
             elements.ttsProgress.value = progress || 0;
         }
         if (elements.ttsCurrentTime) {
             elements.ttsCurrentTime.textContent = formatTime(elements.ttsAudio.currentTime);
         }
-    });
+    };
+    elements.ttsAudio.addEventListener('timeupdate', timeUpdateHandler);
     
-    elements.ttsAudio.addEventListener('play', () => {
+    const playHandler = () => {
         const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
         const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
         if (playIcon) playIcon.classList.add('hidden');
         if (pauseIcon) pauseIcon.classList.remove('hidden');
-    });
+    };
+    elements.ttsAudio.addEventListener('play', playHandler);
     
-    elements.ttsAudio.addEventListener('pause', () => {
+    const pauseHandler = () => {
         const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
         const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
         if (playIcon) playIcon.classList.remove('hidden');
         if (pauseIcon) pauseIcon.classList.add('hidden');
-    });
+    };
+    elements.ttsAudio.addEventListener('pause', pauseHandler);
     
-    elements.ttsAudio.addEventListener('ended', () => {
+    const endedHandler = () => {
         elements.ttsAudio.currentTime = 0;
         const playIcon = elements.ttsPlayPause.querySelector('.play-icon');
         const pauseIcon = elements.ttsPlayPause.querySelector('.pause-icon');
         if (playIcon) playIcon.classList.remove('hidden');
         if (pauseIcon) pauseIcon.classList.add('hidden');
-    });
+    };
+    elements.ttsAudio.addEventListener('ended', endedHandler);
 }
 
 /**
@@ -105,6 +138,24 @@ export async function setupAudioPlayer(elements, base64Data) {
         if (elements.ttsWaveform) {
             await generateWaveform(audioBlob, elements.ttsWaveform);
         }
+        
+        // Auto-play audio after it's loaded
+        const playAudio = () => {
+            if (elements.ttsAudio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+                elements.ttsAudio.play().catch(error => {
+                    console.warn('[Audio] Autoplay prevented:', error);
+                    // Autoplay was prevented by browser policy - user will need to click play
+                });
+            } else {
+                elements.ttsAudio.addEventListener('canplay', () => {
+                    elements.ttsAudio.play().catch(error => {
+                        console.warn('[Audio] Autoplay prevented:', error);
+                    });
+                }, { once: true });
+            }
+        };
+        
+        playAudio();
         
         return audioBlob;
     } catch (error) {

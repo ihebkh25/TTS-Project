@@ -13,6 +13,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer};
@@ -44,7 +45,6 @@ pub struct TtsRequest {
 #[derive(Serialize)]
 pub struct TtsResponse {
     audio_base64: String,
-    spectrogram_base64: String,
     duration_ms: u64,
     sample_rate: u32,
 }
@@ -219,7 +219,8 @@ async fn async_main() -> anyhow::Result<()> {
         .route("/tts", post(tts_endpoint))
         .route("/chat", post(chat_endpoint))
         .route("/voice-chat", post(voice_chat_endpoint))
-        .route("/stream/{lang}/{text}", get(stream_ws));
+        .route("/stream/{lang}/{text}", get(stream_ws))
+        .route("/ws/chat/stream", get(chat_stream_ws));
     
     // Metrics endpoint - consider adding authentication in production
     let metrics_api = Router::new()
@@ -345,12 +346,6 @@ pub async fn tts_endpoint(
         .map_err(ApiError::TtsError)?;
 
     let sample_rate_f32 = sample_rate as f32;
-    let frame_size = 1024usize;
-    let hop_size = 256usize;
-    let n_mels = 80usize;
-
-    let mel = tts_core::TtsManager::audio_to_mel(&samples, sample_rate_f32, frame_size, hop_size, n_mels);
-    let spectrogram_base64 = tts_core::TtsManager::mel_to_png_base64(&mel);
 
     let audio_base64 = tts_core::TtsManager::encode_wav_base64(&samples, sample_rate)
         .map_err(|e| ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}")))?;
@@ -359,7 +354,6 @@ pub async fn tts_endpoint(
 
     Ok(Json(TtsResponse {
         audio_base64,
-        spectrogram_base64,
         duration_ms,
         sample_rate,
     }))
@@ -572,16 +566,17 @@ pub async fn stream_ws(
 
     ws.on_upgrade(move |mut socket| async move {
         use axum::extract::ws::Message;
-        let samples = match state.tts.synthesize_blocking(&text, Some(&lang)) {
-            Ok(s) => s,
-            Err(e) => {
-                let err_msg = serde_json::json!({ "error": format!("TTS error: {e}"), "code": 500 });
-                let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
-                let _ = socket.close().await;
-                return;
-            }
-        };
-
+        
+        // Send synthesizing status
+        let _ = socket.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "synthesizing", 
+                "message": "Generating audio..." 
+            }).to_string().into()
+        )).await;
+        
+        // Get sample rate first
         let sample_rate = match state.tts.config_for(Some(&lang)) {
             Ok((cfg_path, _)) => state.tts.get_sample_rate(&cfg_path).unwrap_or(22050) as f32,
             Err(_) => 22_050.0f32,
@@ -590,14 +585,200 @@ pub async fn stream_ws(
         let frame_size = 1024usize;
         let hop_size = 256usize;
         let n_mels = 80usize;
+        
+        // Get config path
+        let (cfg_path, _) = match state.tts.config_for(Some(&lang)) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                let err_msg = serde_json::json!({ "error": format!("Config error: {e}"), "code": 500 });
+                let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
+                let _ = socket.close().await;
+                return;
+            }
+        };
+        
+        // Create channel for streaming chunks in real-time
+        let (tx, mut rx) = mpsc::channel::<Result<Vec<f32>, String>>(100);
+        
+        // Use spawn_blocking to run synthesis in a separate thread
+        // Stream chunks as they're generated from the iterator
+        let tts_state = state.tts.clone();
+        let text_clone = text.clone();
+        let cfg_path_clone = cfg_path.clone();
+        
+        // Move tx into the blocking task - when task completes, channel will close
+        let synthesis_task = tokio::task::spawn_blocking(move || {
+            // Get synthesizer
+            let (synth_arc, _) = match tts_state.get_or_create_synth(&cfg_path_clone) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(format!("TTS error: {e}")));
+                    return;
+                }
+            };
+            
+            let synth = synth_arc.lock().unwrap();
+            
+            // Create iterator and stream chunks as they come
+            let iter = match synth.synthesize_parallel(text_clone, None) {
+                Ok(i) => i,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(format!("piper synth error: {e}")));
+                    return;
+                }
+            };
+            
+            // Stream chunks from iterator as they're generated
+            for part_result in iter {
+                match part_result {
+                    Ok(samples) => {
+                        let samples_vec = samples.into_vec();
+                        if tx.blocking_send(Ok(samples_vec)).is_err() {
+                            // Receiver dropped, stop processing
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.blocking_send(Err(format!("chunk error: {e}")));
+                        break;
+                    }
+                }
+            }
+            // tx is dropped here when the task completes, closing the channel
+        });
+        
+        // Send streaming status
+        let _ = socket.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "streaming", 
+                "message": "Streaming audio chunks..." 
+            }).to_string().into()
+        )).await;
 
+        // Initialize mel spectrogram processors
         let mut stft = mel_spec::prelude::Spectrogram::new(frame_size, hop_size);
         let mut mel = mel_spec::prelude::MelSpectrogram::new(frame_size, sample_rate as f64, n_mels);
-
+        
+        // Buffer for accumulating samples and streaming in chunks
+        let mut sample_buffer: Vec<f32> = Vec::new();
+        let mut total_samples = 0usize;
         let mut offset = 0usize;
-        while offset + hop_size <= samples.len() {
-            let slice = &samples[offset..offset + hop_size];
-            let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(slice) {
+        let mut chunk_number = 0usize;
+        let mut metadata_sent = false;
+        let mut synthesis_error = None;
+        
+        // Receive chunks from the synthesis task and stream them immediately
+        let mut synthesis_complete = false;
+        while !synthesis_complete {
+            match rx.recv().await {
+                Some(Ok(chunk_samples)) => {
+                    // Add samples to buffer
+                    sample_buffer.extend_from_slice(&chunk_samples);
+                    total_samples += chunk_samples.len();
+                    
+                    // Stream chunks from buffer while we have enough samples
+                    while sample_buffer.len() >= hop_size {
+                        let chunk: Vec<f32> = sample_buffer.drain(..hop_size).collect();
+                        
+                        // Calculate mel spectrogram frame
+                        let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(&chunk) {
+                            let arr_f64 = ndarray::Array1::from_iter(
+                                fft_frame.into_iter().map(|c: num_complex::Complex<f64>| c),
+                            );
+                            let (flat, _off) = mel.add(&arr_f64).into_raw_vec_and_offset();
+                            flat
+                        } else {
+                            vec![0.0f64; n_mels]
+                        };
+                        let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
+                        
+                        // Send metadata after first chunk (for sample rate and hop size info)
+                        // Don't send total_chunks here - wait until we know the actual value
+                        if !metadata_sent {
+                            let _ = socket.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "metadata",
+                                    "sample_rate": sample_rate as u32,
+                                    "total_samples": 0, // Unknown until complete
+                                    "estimated_duration": 0.0, // Unknown until complete
+                                    "total_chunks": 0, // Don't send estimate - wait for actual
+                                    "hop_size": hop_size
+                                }).to_string().into()
+                            )).await;
+                            metadata_sent = true;
+                        }
+                        
+                        // Calculate progress metadata
+                        // Progress is based on samples processed (offset) vs samples received so far
+                        // Since we don't know final total until synthesis completes, we use a conservative estimate
+                        chunk_number += 1;
+                        
+                        let progress = if total_samples > offset {
+                            // Progress based on what we've processed vs what we've received
+                            // Cap at 95% until we know the final total
+                            ((offset as f32 / total_samples as f32) * 100.0 * 0.95).min(95.0)
+                        } else {
+                            0.0
+                        };
+                        let timestamp = offset as f32 / sample_rate;
+                        let chunk_duration = hop_size as f32 / sample_rate;
+
+                        let msg = serde_json::json!({ 
+                            "type": "chunk",
+                            "audio": chunk, 
+                            "mel": mel_frame,
+                            "chunk": chunk_number,
+                            "total_chunks": 0, // Don't send total until we know it (final metadata)
+                            "progress": progress,
+                            "timestamp": timestamp,
+                            "duration": chunk_duration,
+                            "offset": offset
+                        });
+                        
+                        if let Err(e) = socket.send(Message::Text(msg.to_string().into())).await {
+                            warn!("Failed to send WS message: {e}");
+                            synthesis_complete = true;
+                            break;
+                        }
+                        
+                        offset += hop_size;
+                    }
+                }
+                Some(Err(e)) => {
+                    synthesis_error = Some(e);
+                    break;
+                }
+                None => {
+                    // Channel closed, synthesis complete
+                    break;
+                }
+            }
+        }
+        
+        // Wait for synthesis task to complete (in case it's still running)
+        let _ = synthesis_task.await;
+        
+        // Check for synthesis errors
+        if let Some(err) = synthesis_error {
+            let err_msg = serde_json::json!({ "error": err, "code": 500 });
+            let _ = socket.send(Message::Text(err_msg.to_string().into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+        
+        // Process any remaining samples in buffer (if any)
+        // Note: We don't pad with zeros - we just send what we have if it's significant
+        // The frontend can handle incomplete final chunks
+        if !sample_buffer.is_empty() && sample_buffer.len() >= hop_size / 2 {
+            // Only send if we have at least half a chunk to avoid very small final chunks
+            // Pad to hop_size for consistent processing
+            let mut final_chunk = sample_buffer.drain(..).collect::<Vec<f32>>();
+            while final_chunk.len() < hop_size {
+                final_chunk.push(0.0);
+            }
+            
+            let mel_frame_f64: Vec<f64> = if let Some(fft_frame) = stft.add(&final_chunk) {
                 let arr_f64 = ndarray::Array1::from_iter(
                     fft_frame.into_iter().map(|c: num_complex::Complex<f64>| c),
                 );
@@ -607,18 +788,318 @@ pub async fn stream_ws(
                 vec![0.0f64; n_mels]
             };
             let mel_frame: Vec<f32> = mel_frame_f64.iter().copied().map(|v| v as f32).collect();
-            let chunk: Vec<f32> = slice.to_vec();
+            
+            chunk_number += 1;
+            let progress = 100.0;
+            let timestamp = offset as f32 / sample_rate;
+            let chunk_duration = hop_size as f32 / sample_rate;
+            let total_chunks = chunk_number;
 
-            let msg = serde_json::json!({ "audio": chunk, "mel": mel_frame });
-            if let Err(e) = socket.send(Message::Text(msg.to_string().into())).await {
-                warn!("Failed to send WS message: {e}");
-                break;
-            }
-            offset += hop_size;
+            let msg = serde_json::json!({ 
+                "type": "chunk",
+                "audio": final_chunk, 
+                "mel": mel_frame,
+                "chunk": chunk_number,
+                "total_chunks": total_chunks,
+                "progress": progress,
+                "timestamp": timestamp,
+                "duration": chunk_duration,
+                "offset": offset
+            });
+            
+            let _ = socket.send(Message::Text(msg.to_string().into())).await;
         }
+        
+        // Send final metadata update with actual totals
+        let final_duration = total_samples as f32 / sample_rate;
+        let final_chunks = chunk_number;
+        let _ = socket.send(Message::Text(
+            serde_json::json!({
+                "type": "metadata",
+                "sample_rate": sample_rate as u32,
+                "total_samples": total_samples,
+                "estimated_duration": final_duration,
+                "total_chunks": final_chunks,
+                "hop_size": hop_size
+            }).to_string().into()
+        )).await;
 
-        let _ = socket.send(Message::Text(serde_json::json!({ "status": "complete" }).to_string().into())).await;
+        let _ = socket.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "complete" 
+            }).to_string().into()
+        )).await;
         let _ = socket.close().await;
+    })
+}
+
+/// WebSocket endpoint for streaming chat (LLM + TTS)
+/// Accepts query parameters: message, conversation_id (optional), language (optional)
+pub async fn chat_stream_ws(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let message = params.get("message").cloned().unwrap_or_default();
+    let conversation_id = params.get("conversation_id").cloned();
+    let language = params.get("language").cloned();
+    
+    if message.is_empty() {
+        return ws.on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            let error_msg = serde_json::json!({ "error": "Message parameter is required", "code": 400 });
+            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+        });
+    }
+    
+    if let Err(e) = validate_chat_request(&message) {
+        return ws.on_upgrade(move |mut socket| async move {
+            use axum::extract::ws::Message;
+            let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
+            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+        });
+    }
+    
+    if let Some(ref id) = conversation_id {
+        if let Err(e) = validate_conversation_id(id) {
+            return ws.on_upgrade(move |mut socket| async move {
+                use axum::extract::ws::Message;
+                let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
+                let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
+            });
+        }
+    }
+
+    ws.on_upgrade(move |socket| async move {
+        use axum::extract::ws::Message;
+        use futures_util::{SinkExt as _, StreamExt as _};
+        
+        // Split socket into sender and receiver
+        let (mut sender, _receiver) = socket.split();
+        
+        // Send initial status
+        let _ = sender.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "streaming", 
+                "message": "Starting LLM stream..." 
+            }).to_string().into()
+        )).await;
+        
+        // Get LLM client and create stream
+        let llm = state.llm.clone();
+        let message_clone = message.clone();
+        let conv_id_clone = conversation_id.clone();
+        
+        // Create channel for LLM tokens
+        let (token_stream_tx, mut token_stream_rx) = mpsc::channel::<Result<String, String>>(100);
+        let token_stream_tx_clone = token_stream_tx.clone();
+        
+        // Spawn task to handle LLM streaming
+        // We need to create the stream in a way that doesn't hold the lock
+        // The stream uses channels internally, so it should be 'static after creation
+        tokio::spawn(async move {
+            // Create stream - we need to hold the lock only briefly
+            // The stream itself uses channels and spawned tasks, so it's independent
+            let mut stream = {
+                // Hold lock only to create the stream
+                let llm_guard = llm.lock().unwrap();
+                llm_guard.chat_with_history_stream(conv_id_clone, &message_clone)
+            };
+            // Lock is released here - stream should be independent
+            
+            // Consume stream and forward tokens
+            use futures_util::StreamExt as _;
+            while let Some(result) = stream.next().await {
+                if token_stream_tx_clone.send(result.map_err(|e| e.to_string())).await.is_err() {
+                    break; // Receiver dropped
+                }
+            }
+        });
+        
+        // Create channel for TTS audio chunks
+        let (tts_tx, mut tts_rx) = mpsc::channel::<Result<(String, u32), String>>(10);
+        let tts_tx_clone = tts_tx.clone();
+        
+        // Stream tokens and optionally generate TTS
+        let mut full_text = String::new();
+        let mut accumulated_text = String::new();
+        let tts_state = state.tts.clone();
+        let lang = language.clone().unwrap_or_else(|| "en_US".to_string());
+        
+        // Buffer for TTS generation (generate TTS for chunks of text)
+        const TTS_CHUNK_SIZE: usize = 50; // Generate TTS every ~50 characters
+        
+        // Track if LLM stream is complete
+        let mut llm_complete = false;
+        let mut pending_tts_tasks = 0u32;
+        
+        // Use select to handle both LLM tokens and TTS chunks
+        loop {
+            tokio::select! {
+                // Handle LLM tokens
+                token_result = token_stream_rx.recv(), if !llm_complete => {
+                    match token_result {
+                        Some(Ok(token)) => {
+                            full_text.push_str(&token);
+                            accumulated_text.push_str(&token);
+                            
+                            // Send token to client
+                            if let Err(e) = sender.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "token",
+                                    "token": token.clone(),
+                                    "text": full_text.clone()
+                                }).to_string().into()
+                            )).await {
+                                warn!("Failed to send token: {}", e);
+                                break;
+                            }
+                            
+                            // Generate TTS chunk if we have enough text
+                            if accumulated_text.len() >= TTS_CHUNK_SIZE {
+                                let text_for_tts = accumulated_text.clone();
+                                accumulated_text.clear();
+                                
+                                // Generate TTS in background
+                                let tts_state_clone = tts_state.clone();
+                                let lang_clone = lang.clone();
+                                let tts_tx_for_task = tts_tx_clone.clone();
+                                
+                                pending_tts_tasks += 1;
+                                tokio::spawn(async move {
+                                    let (samples, sample_rate) = match tokio::task::spawn_blocking(move || {
+                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts, Some(&lang_clone), None)
+                                    }).await {
+                                        Ok(Ok(result)) => result,
+                                        Ok(Err(e)) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("TTS error: {}", e))).await;
+                                            return;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("Task error: {}", e))).await;
+                                            return;
+                                        }
+                                    };
+                                    
+                                    // Convert to base64 WAV
+                                    match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
+                                        Ok(audio_base64) => {
+                                            let _ = tts_tx_for_task.send(Ok((audio_base64, sample_rate))).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_for_task.send(Err(format!("WAV encoding error: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        Some(Err(e)) => {
+                            let err_msg = serde_json::json!({ "error": format!("Stream error: {e}"), "code": 500 });
+                            let _ = sender.send(Message::Text(err_msg.to_string().into())).await;
+                            break;
+                        }
+                        None => {
+                            // LLM stream complete - generate TTS for remaining text
+                            llm_complete = true;
+                            if !accumulated_text.is_empty() {
+                                let text_for_tts = accumulated_text.clone();
+                                accumulated_text.clear();
+                                pending_tts_tasks += 1;
+                                
+                                let tts_state_final = tts_state.clone();
+                                let lang_final = lang.clone();
+                                let tts_tx_final = tts_tx_clone.clone();
+                                
+                                tokio::spawn(async move {
+                                    match tokio::task::spawn_blocking(move || {
+                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts, Some(&lang_final), None)
+                                    }).await {
+                                        Ok(Ok((samples, sample_rate))) => {
+                                            match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
+                                                Ok(audio_base64) => {
+                                                    let _ = tts_tx_final.send(Ok((audio_base64, sample_rate))).await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tts_tx_final.send(Err(format!("WAV encoding error: {}", e))).await;
+                                                }
+                                            }
+                                        }
+                                        Ok(Err(e)) => {
+                                            let _ = tts_tx_final.send(Err(format!("TTS error: {}", e))).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tts_tx_final.send(Err(format!("Task error: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            // If no pending TTS tasks, we can break
+                            if pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Handle TTS chunks
+                tts_result = tts_rx.recv() => {
+                    match tts_result {
+                        Some(Ok((audio_base64, sample_rate))) => {
+                            if pending_tts_tasks > 0 {
+                                pending_tts_tasks -= 1;
+                            }
+                            
+                            if let Err(e) = sender.send(Message::Text(
+                                serde_json::json!({
+                                    "type": "audio_chunk",
+                                    "audio": audio_base64,
+                                    "sample_rate": sample_rate
+                                }).to_string().into()
+                            )).await {
+                                warn!("Failed to send audio chunk: {}", e);
+                                break;
+                            }
+                            
+                            // If LLM is complete and no more pending tasks, break
+                            if llm_complete && pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            if pending_tts_tasks > 0 {
+                                pending_tts_tasks -= 1;
+                            }
+                            warn!("TTS error: {}", e);
+                            
+                            // If LLM is complete and no more pending tasks, break
+                            if llm_complete && pending_tts_tasks == 0 {
+                                break;
+                            }
+                        }
+                        None => {
+                            // TTS channel closed - if LLM is also complete, we're done
+                            if llm_complete {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Send completion status
+        let _ = sender.send(Message::Text(
+            serde_json::json!({ 
+                "type": "status", 
+                "status": "complete",
+                "text": full_text
+            }).to_string().into()
+        )).await;
+        
+        let _ = sender.close().await;
     })
 }
 

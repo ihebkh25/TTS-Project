@@ -1,6 +1,16 @@
 // Chat component
 
 import { base64ToBlob } from '../utils/audio.js';
+import { visualizeAudioSpectrogram } from './spectrogram.js';
+
+// Cache template lookups (templates don't change)
+let typingIndicatorTemplateCache = null;
+function getTypingIndicatorTemplate() {
+    if (!typingIndicatorTemplateCache) {
+        typingIndicatorTemplateCache = document.getElementById('typingIndicatorTemplate');
+    }
+    return typingIndicatorTemplateCache;
+}
 
 /**
  * Scroll chat to bottom
@@ -15,7 +25,8 @@ export function scrollChatToBottom(container, force = false) {
             const maxScroll = scrollHeight - clientHeight;
             
             const currentScroll = container.scrollTop;
-            const isNearBottom = (scrollHeight - currentScroll - clientHeight) < 100;
+            const SCROLL_NEAR_BOTTOM_THRESHOLD = 100; // Pixels from bottom to consider "near bottom"
+            const isNearBottom = (scrollHeight - currentScroll - clientHeight) < SCROLL_NEAR_BOTTOM_THRESHOLD;
             
             if (force || isNearBottom) {
                 container.scrollTo({
@@ -59,8 +70,15 @@ export function addChatMessage(container, sender, message, audioBase64 = null, s
     messageContent.className = 'message-content';
     
     if (state === 'generating') {
-        // Show typing indicator for generating messages
-        messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        // Show typing indicator for generating messages (using template)
+        const typingTemplate = getTypingIndicatorTemplate();
+        if (typingTemplate) {
+            const typingIndicator = typingTemplate.content.cloneNode(true);
+            messageContent.appendChild(typingIndicator);
+        } else {
+            // Fallback
+            messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        }
     } else {
         messageContent.textContent = message;
     }
@@ -121,6 +139,14 @@ export function addChatMessage(container, sender, message, audioBase64 = null, s
 export function updateMessageState(messageElement, state, content = null) {
     if (!messageElement) return;
     
+    // Clear any existing timeouts for this message element to prevent race conditions
+    if (messageElement._updateTimeouts) {
+        messageElement._updateTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+        messageElement._updateTimeouts = [];
+    } else {
+        messageElement._updateTimeouts = [];
+    }
+    
     // Remove previous state classes
     messageElement.classList.remove('message-sending', 'message-generating');
     
@@ -131,9 +157,70 @@ export function updateMessageState(messageElement, state, content = null) {
         messageElement.classList.add('message-sending');
     } else if (state === 'generating') {
         messageElement.classList.add('message-generating');
-        messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        // Remove fade classes if present
+        messageContent.classList.remove('fade-in', 'fade-out');
+        const typingTemplate = getTypingIndicatorTemplate();
+        if (typingTemplate) {
+            messageContent.innerHTML = '';
+            const typingIndicator = typingTemplate.content.cloneNode(true);
+            messageContent.appendChild(typingIndicator);
+        } else {
+            // Fallback
+            messageContent.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+        }
     } else if (state === 'complete' && content) {
-        messageContent.textContent = content;
+        // Smooth transition from typing indicator to content
+        const typingIndicator = messageContent.querySelector('.typing-indicator');
+        const wasGenerating = messageElement.classList.contains('message-generating');
+        
+        if (typingIndicator && wasGenerating) {
+            // Fade out typing indicator first
+            typingIndicator.classList.add('fade-out');
+            
+            // Wait for fade-out animation, then replace with content
+            const timeout1 = setTimeout(() => {
+                // Check if element still exists (might have been removed)
+                if (!messageElement.parentNode) return;
+                
+                // Remove generating class and glow animation
+                messageElement.classList.remove('message-generating');
+                messageContent.textContent = content;
+                messageContent.classList.add('fade-in');
+                
+                // Remove fade-in class after animation completes
+                const timeout2 = setTimeout(() => {
+                    if (messageContent && messageContent.parentNode) {
+                        messageContent.classList.remove('fade-in');
+                    }
+                    // Remove timeout from array
+                    if (messageElement._updateTimeouts) {
+                        const index = messageElement._updateTimeouts.indexOf(timeout2);
+                        if (index > -1) messageElement._updateTimeouts.splice(index, 1);
+                    }
+                }, 300);
+                
+                if (messageElement._updateTimeouts) {
+                    messageElement._updateTimeouts.push(timeout2);
+                }
+            }, 200); // Match CSS transition duration
+            
+            messageElement._updateTimeouts.push(timeout1);
+        } else {
+            // No typing indicator or not generating, just update content with fade-in
+            messageContent.textContent = content;
+            messageContent.classList.add('fade-in');
+            const timeout = setTimeout(() => {
+                if (messageContent && messageContent.parentNode) {
+                    messageContent.classList.remove('fade-in');
+                }
+                // Remove timeout from array
+                if (messageElement._updateTimeouts) {
+                    const index = messageElement._updateTimeouts.indexOf(timeout);
+                    if (index > -1) messageElement._updateTimeouts.splice(index, 1);
+                }
+            }, 300);
+            messageElement._updateTimeouts.push(timeout);
+        }
     }
 }
 
@@ -167,116 +254,30 @@ export function addMessageSpectrogram(messageElement, audioElement, audioBase64)
 }
 
 /**
- * Visualize audio spectrogram in real-time
- */
-function visualizeAudioSpectrogram(canvas, audioElement) {
-    const ctx = canvas.getContext('2d');
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioContext.createMediaElementSource(audioElement);
-    const analyser = audioContext.createAnalyser();
-    
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.8;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    source.connect(analyser);
-    analyser.connect(audioContext.destination);
-    
-    let animationFrame = null;
-    
-    function draw() {
-        if (audioElement.paused || audioElement.ended) {
-            if (animationFrame) {
-                cancelAnimationFrame(animationFrame);
-                animationFrame = null;
-            }
-            // Draw final state
-            drawSpectrogramFrame(ctx, canvas, dataArray, 0);
-            audioContext.close();
-            return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        drawSpectrogramFrame(ctx, canvas, dataArray, analyser);
-        
-        animationFrame = requestAnimationFrame(draw);
-    }
-    
-    audioElement.addEventListener('play', () => {
-        draw();
-    });
-    
-    audioElement.addEventListener('pause', () => {
-        if (animationFrame) {
-            cancelAnimationFrame(animationFrame);
-            animationFrame = null;
-        }
-    });
-}
-
-/**
- * Draw spectrogram frame
- */
-function drawSpectrogramFrame(ctx, canvas, dataArray, analyser) {
-    const width = canvas.width;
-    const height = canvas.height;
-    const bufferLength = dataArray.length;
-    
-    // Clear with gradient background
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#0a0a0a');
-    gradient.addColorStop(1, '#000000');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-    
-    if (!analyser) return;
-    
-    const barCount = Math.min(bufferLength, 256); // Limit bars for performance
-    const barWidth = width / barCount;
-    
-    for (let i = 0; i < barCount; i++) {
-        const barHeight = (dataArray[i] / 255) * height * 0.9;
-        const x = (i / barCount) * width;
-        const y = height - barHeight;
-        
-        // Create gradient for each bar
-        const barGradient = ctx.createLinearGradient(x, y, x, height);
-        const intensity = dataArray[i] / 255;
-        
-        // Color mapping: blue (low) -> cyan -> green -> yellow -> red (high)
-        let hue, saturation, lightness;
-        if (intensity < 0.25) {
-            hue = 240; // Blue
-            saturation = 100;
-            lightness = 30 + intensity * 40;
-        } else if (intensity < 0.5) {
-            hue = 200; // Cyan
-            saturation = 100;
-            lightness = 50 + (intensity - 0.25) * 30;
-        } else if (intensity < 0.75) {
-            hue = 150; // Green
-            saturation = 100;
-            lightness = 60 + (intensity - 0.5) * 20;
-        } else {
-            hue = 60 - (intensity - 0.75) * 60; // Yellow to Red
-            saturation = 100;
-            lightness = 70;
-        }
-        
-        barGradient.addColorStop(0, `hsl(${hue}, ${saturation}%, ${lightness}%)`);
-        barGradient.addColorStop(1, `hsl(${hue}, ${saturation}%, ${lightness * 0.3}%)`);
-        
-        ctx.fillStyle = barGradient;
-        ctx.fillRect(x, y, barWidth - 1, barHeight);
-    }
-}
-
-/**
  * Clear chat
  */
 export function clearChat(container) {
     if (!container) return;
+    
+    // Cleanup all timeouts and spectrograms before clearing
+    const messages = container.querySelectorAll('.message');
+    messages.forEach(message => {
+        // Clear any pending timeouts
+        if (message._updateTimeouts) {
+            message._updateTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+            message._updateTimeouts = [];
+        }
+        
+        // Cleanup spectrogram if present
+        const audioElement = message.querySelector('audio.message-audio');
+        if (audioElement && audioElement._spectrogramCleanup) {
+            audioElement._spectrogramCleanup();
+            audioElement._spectrogramCleanup = null;
+        }
+    });
+    
+    // Cleanup audio blob URLs before clearing (revoke all including current)
+    cleanupAudioBlobUrls(container, true);
     
     container.innerHTML = '';
     
@@ -317,6 +318,39 @@ export function exportChat(container) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Cleanup blob URL after a short delay to ensure download started
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Cleanup all audio blob URLs in chat messages to prevent memory leaks
+ * @param {HTMLElement} container - Container element with audio elements
+ * @param {boolean} revokeCurrent - If true, also revoke current src (use when removing elements)
+ */
+export function cleanupAudioBlobUrls(container, revokeCurrent = false) {
+    if (!container) return;
+    
+    const audioElements = container.querySelectorAll('audio.message-audio');
+    audioElements.forEach(audio => {
+        // Always revoke previous URLs (these are no longer in use)
+        if (audio.previousUrl) {
+            try {
+                URL.revokeObjectURL(audio.previousUrl);
+            } catch (e) {
+                // URL may have already been revoked, ignore error
+                console.warn('Error revoking previous audio URL:', e);
+            }
+            audio.previousUrl = null;
+        }
+        // Only revoke current src if explicitly requested (e.g., when clearing chat)
+        if (revokeCurrent && audio.src && audio.src.startsWith('blob:')) {
+            try {
+                URL.revokeObjectURL(audio.src);
+            } catch (e) {
+                // URL may have already been revoked, ignore error
+                console.warn('Error revoking current audio URL:', e);
+            }
+        }
+    });
 }
 

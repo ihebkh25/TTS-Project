@@ -25,6 +25,8 @@ COPY llm_core ./llm_core
 COPY server ./server
 
 # Build release binary
+# Use sparse registry index to save space
+ENV CARGO_NET_SPARSE_REGISTRY=true
 RUN cargo build --release --bin server
 
 # Runtime stage

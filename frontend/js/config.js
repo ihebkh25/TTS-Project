@@ -82,13 +82,21 @@ let _wsBase = null;
 
 function getApiBaseLazy() {
     try {
-        if (!_apiBase) {
-            _apiBase = getApiBase();
+        // Always recompute if window.location is now available (for dynamic environments)
+        // But cache the result to avoid repeated computation
+        if (!_apiBase || (typeof window !== 'undefined' && window.location)) {
+            const computed = getApiBase();
+            if (computed && !computed.includes('undefined') && !computed.includes('null')) {
+                _apiBase = computed;
+            } else if (!_apiBase) {
+                // Only use fallback if we don't have a cached value
+                _apiBase = 'http://localhost:8085';
+            }
         }
-        return _apiBase;
+        return _apiBase || 'http://localhost:8085';
     } catch (error) {
         console.error('[Config] Error in getApiBaseLazy:', error);
-        return 'http://localhost:8085'; // Fallback
+        return _apiBase || 'http://localhost:8085'; // Fallback
     }
 }
 

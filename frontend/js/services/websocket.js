@@ -18,9 +18,13 @@ export function startWebSocketStream(text, language, callbacks) {
         const audioSamples = [];
         let sampleRate = STREAMING.DEFAULT_SAMPLE_RATE;
         let receivedChunks = 0;
+        let streamMetadata = null;
+        let startTime = null;
+        let lastChunkTime = null;
         
         function connect() {
             ws = new WebSocket(wsUrl);
+            startTime = performance.now();
             
             ws.onopen = () => {
                 reconnectAttempts = 0;
@@ -35,27 +39,88 @@ export function startWebSocketStream(text, language, callbacks) {
                         throw new Error(data.error);
                     }
                     
-                    if (data.status === 'complete') {
-                        return;
-                    }
+                    // Handle different message types
+                    const messageType = data.type || (data.status ? 'status' : 'chunk');
                     
-                    // Collect audio samples with memory limit
-                    if (data.audio && Array.isArray(data.audio)) {
-                        if (audioSamples.length + data.audio.length > STREAMING.MAX_AUDIO_SAMPLES) {
-                            console.warn('Audio sample limit reached, stopping stream');
-                            callbacks.onError?.('Stream too long. Maximum audio length exceeded.');
-                            ws.close();
-                            return;
-                        }
-                        
-                        audioSamples.push(...data.audio);
-                        receivedChunks++;
-                        callbacks.onProgress?.(receivedChunks);
-                    }
-                    
-                    // Handle mel spectrogram frames
-                    if (data.mel && Array.isArray(data.mel)) {
-                        callbacks.onMelFrame?.(data.mel);
+                    switch (messageType) {
+                        case 'metadata':
+                            // Initial metadata message
+                            streamMetadata = {
+                                sampleRate: data.sample_rate || STREAMING.DEFAULT_SAMPLE_RATE,
+                                totalSamples: data.total_samples || 0,
+                                estimatedDuration: data.estimated_duration || 0,
+                                totalChunks: data.total_chunks || 0,
+                                hopSize: data.hop_size || 256
+                            };
+                            sampleRate = streamMetadata.sampleRate;
+                            callbacks.onMetadata?.(streamMetadata);
+                            break;
+                            
+                        case 'status':
+                            // Status updates (synthesizing, streaming, complete)
+                            if (data.status === 'complete') {
+                                return; // Handled in onclose
+                            }
+                            callbacks.onStatus?.(data.status, data.message);
+                            break;
+                            
+                        case 'chunk':
+                            // Audio chunk with progress metadata
+                            lastChunkTime = performance.now();
+                            
+                            if (data.audio && Array.isArray(data.audio)) {
+                                if (audioSamples.length + data.audio.length > STREAMING.MAX_AUDIO_SAMPLES) {
+                                    console.warn('Audio sample limit reached, stopping stream');
+                                    callbacks.onError?.('Stream too long. Maximum audio length exceeded.');
+                                    ws.close();
+                                    return;
+                                }
+                                
+                                audioSamples.push(...data.audio);
+                                receivedChunks++;
+                                
+                                // Calculate metrics
+                                const metrics = {
+                                    chunk: data.chunk || receivedChunks,
+                                    totalChunks: data.total_chunks || streamMetadata?.totalChunks || 0,
+                                    progress: data.progress || 0,
+                                    timestamp: data.timestamp || 0,
+                                    duration: data.duration || 0,
+                                    offset: data.offset || 0,
+                                    chunksPerSecond: startTime ? receivedChunks / ((lastChunkTime - startTime) / 1000) : 0,
+                                    estimatedTimeRemaining: streamMetadata && data.progress > 0 
+                                        ? (streamMetadata.estimatedDuration * (100 - data.progress) / 100)
+                                        : null
+                                };
+                                
+                                callbacks.onProgress?.(receivedChunks, metrics);
+                            }
+                            
+                            // Handle mel spectrogram frames
+                            if (data.mel && Array.isArray(data.mel)) {
+                                callbacks.onMelFrame?.(data.mel);
+                            }
+                            break;
+                            
+                        default:
+                            // Legacy format support (backward compatibility)
+                            if (data.audio && Array.isArray(data.audio)) {
+                                if (audioSamples.length + data.audio.length > STREAMING.MAX_AUDIO_SAMPLES) {
+                                    console.warn('Audio sample limit reached, stopping stream');
+                                    callbacks.onError?.('Stream too long. Maximum audio length exceeded.');
+                                    ws.close();
+                                    return;
+                                }
+                                
+                                audioSamples.push(...data.audio);
+                                receivedChunks++;
+                                callbacks.onProgress?.(receivedChunks);
+                            }
+                            
+                            if (data.mel && Array.isArray(data.mel)) {
+                                callbacks.onMelFrame?.(data.mel);
+                            }
+                            break;
                     }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);

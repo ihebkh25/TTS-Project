@@ -17,7 +17,11 @@
     </div>
 
     <div class="chat-messages-container">
-        <div class="chat-messages" id="chatMessages">
+        <!-- ARIA live region for screen reader announcements -->
+        <div id="chatAriaLive" class="sr-only" aria-live="polite" aria-atomic="false"></div>
+        <div id="chatAriaLiveAssertive" class="sr-only" aria-live="assertive" aria-atomic="false"></div>
+        
+        <div class="chat-messages" id="chatMessages" role="log" aria-label="Chat messages" aria-live="polite" aria-atomic="false">
             <div class="message-wrapper">
                 <div class="message-container bot">
                     <div class="message bot welcome">
@@ -100,7 +104,7 @@
                     </svg>
                 </button>
             </div>
-            <div class="voice-mode-status-compact" id="voiceModeStatusCompact">
+            <div class="voice-mode-status-compact" id="voiceModeStatusCompact" role="status" aria-live="polite">
                 <span class="voice-mode-status-text">Click microphone to start recording</span>
                 <span class="voice-mode-vad-hint">Auto-stop after 1.5s silence</span>
             </div>

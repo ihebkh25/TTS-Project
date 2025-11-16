@@ -4,7 +4,7 @@ import { CONFIG } from '../config.js';
 import { sendChatMessage, sendVoiceChatMessage } from '../services/api.js';
 import { setButtonState, showStatus } from '../utils/dom.js';
 import { showToast } from '../utils/toast.js';
-import { addChatMessage, scrollChatToBottom, clearChat, exportChat, updateMessageState, addMessageSpectrogram } from '../components/chat.js';
+import { addChatMessage, scrollChatToBottom, clearChat, exportChat, updateMessageState, addMessageSpectrogram, cleanupAudioBlobUrls } from '../components/chat.js';
 import { base64ToBlob } from '../utils/audio.js';
 import { 
     isSpeechRecognitionSupported, 
@@ -15,6 +15,14 @@ import {
 } from '../services/voice.js';
 import { ttsLangToSpeechLang } from '../utils/format.js';
 
+// Constants
+const TRANSCRIPT_UPDATE_THROTTLE_MS = 100; // Throttle transcript updates to avoid excessive DOM updates
+const RECORDING_TIMER_INTERVAL_MS = 100; // Update recording timer every 100ms
+const MESSAGE_SENDING_STATE_DELAY_MS = 500; // Delay before removing "sending" state from user message
+const SCROLL_NEAR_BOTTOM_THRESHOLD = 100; // Pixels from bottom to consider "near bottom"
+const SPECTROGRAM_BAR_COUNT = 64; // Number of frequency bars in spectrogram visualization
+const DEFAULT_LANGUAGE = 'en_US'; // Default language for voice mode
+
 /**
  * Initialize Chat tab
  * @param {Object} elements - DOM elements
@@ -22,6 +30,37 @@ import { ttsLangToSpeechLang } from '../utils/format.js';
  * @returns {Object} Tab handlers and cleanup functions
  */
 export function initChatTab(elements, state) {
+    // Store event listener references for cleanup
+    const eventListeners = [];
+    const timeoutIds = [];
+    
+    // Helper to add event listener with cleanup tracking
+    function addEventListenerWithCleanup(element, event, handler, options) {
+        if (!element) return;
+        element.addEventListener(event, handler, options);
+        eventListeners.push({ element, event, handler, options });
+    }
+    
+    // Announce messages to screen readers via ARIA live regions
+    function announceToScreenReader(message, priority = 'polite') {
+        const liveRegion = priority === 'assertive' 
+            ? document.getElementById('chatAriaLiveAssertive')
+            : document.getElementById('chatAriaLive');
+        
+        if (liveRegion) {
+            // Clear previous message
+            liveRegion.textContent = '';
+            // Use setTimeout to ensure screen readers pick up the change
+            const timeoutId = setTimeout(() => {
+                liveRegion.textContent = message;
+                // Remove from array
+                const index = timeoutIds.indexOf(timeoutId);
+                if (index > -1) timeoutIds.splice(index, 1);
+            }, 100);
+            timeoutIds.push(timeoutId);
+        }
+    }
+    
     // Chat Form Submission Handler
     async function handleChatSubmit(e) {
         e.preventDefault();
@@ -46,7 +85,7 @@ export function initChatTab(elements, state) {
                 if (userMessage) {
                     userMessage.classList.remove('message-sending');
                 }
-            }, 500);
+            }, MESSAGE_SENDING_STATE_DELAY_MS);
             
             // Add bot message with generating state
             const botMessage = addChatMessage(
@@ -68,7 +107,11 @@ export function initChatTab(elements, state) {
             
             // Update bot message with complete content
             if (botMessage) {
-                updateMessageState(botMessage, 'complete', data.reply || 'No response received');
+                const replyText = data.reply || 'No response received';
+                updateMessageState(botMessage, 'complete', replyText);
+                
+                // Announce bot response to screen readers
+                announceToScreenReader(`Bot response: ${replyText}`, 'polite');
                 
                 // Add audio player for bot messages with audio
                 if (data.audio_base64) {
@@ -84,7 +127,12 @@ export function initChatTab(elements, state) {
                         const audioUrl = URL.createObjectURL(blob);
                         audioElement.src = audioUrl;
                         if (audioElement.previousUrl) {
-                            URL.revokeObjectURL(audioElement.previousUrl);
+                            try {
+                                URL.revokeObjectURL(audioElement.previousUrl);
+                            } catch (e) {
+                                // URL may have already been revoked, ignore error
+                                console.warn('Error revoking previous audio URL:', e);
+                            }
                         }
                         audioElement.previousUrl = audioUrl;
                         
@@ -106,13 +154,16 @@ export function initChatTab(elements, state) {
             
         } catch (error) {
             console.error('Chat Error:', error);
+            const errorMessage = `Sorry, I'm having trouble connecting to the AI service. ${error.message}`;
             addChatMessage(
                 elements.chatMessages, 
                 'bot', 
-                `Sorry, I'm having trouble connecting to the AI service. ${error.message}`
+                errorMessage
             );
             showStatus(elements.chatStatus, 'error', `Error: ${error.message}`);
             showToast('error', `Error: ${error.message}`);
+            // Announce error to screen readers
+            announceToScreenReader(`Error: ${error.message}`, 'assertive');
         } finally {
             setButtonState(elements.chatBtn, false, 'Send');
         }
@@ -120,43 +171,36 @@ export function initChatTab(elements, state) {
     
     // Set up event listeners
     function setupEventListeners() {
-        if (elements.chatForm) {
-            elements.chatForm.addEventListener('submit', handleChatSubmit);
-        }
+        addEventListenerWithCleanup(elements.chatForm, 'submit', handleChatSubmit);
         
         // Enter key support for chat
-        if (elements.chatInput) {
-            elements.chatInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (elements.chatForm) {
-                        elements.chatForm.dispatchEvent(new Event('submit'));
-                    }
+        const keypressHandler = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (elements.chatForm) {
+                    elements.chatForm.dispatchEvent(new Event('submit'));
                 }
-            });
-        }
+            }
+        };
+        addEventListenerWithCleanup(elements.chatInput, 'keypress', keypressHandler);
         
         // Clear and export chat buttons
-        if (elements.clearChatBtn) {
-            elements.clearChatBtn.addEventListener('click', () => {
-                clearChat(elements.chatMessages);
-                if (state.setCurrentConversationId) {
-                    state.setCurrentConversationId(null);
-                } else {
-                    state.currentConversationId = null;
-                }
-                showStatus(elements.chatStatus, 'info', 'Chat cleared');
-                showToast('success', 'Chat cleared');
-            });
-        }
+        addEventListenerWithCleanup(elements.clearChatBtn, 'click', () => {
+            clearChat(elements.chatMessages);
+            if (state.setCurrentConversationId) {
+                state.setCurrentConversationId(null);
+            } else {
+                state.currentConversationId = null;
+            }
+            showStatus(elements.chatStatus, 'info', 'Chat cleared');
+            showToast('success', 'Chat cleared');
+        });
         
-        if (elements.exportChatBtn) {
-            elements.exportChatBtn.addEventListener('click', () => {
-                exportChat(elements.chatMessages);
-                showStatus(elements.chatStatus, 'success', 'Chat exported!');
-                showToast('success', 'Chat exported successfully!');
-            });
-        }
+        addEventListenerWithCleanup(elements.exportChatBtn, 'click', () => {
+            exportChat(elements.chatMessages);
+            showStatus(elements.chatStatus, 'success', 'Chat exported!');
+            showToast('success', 'Chat exported successfully!');
+        });
     }
     
     // Dictating Mode State
@@ -213,7 +257,7 @@ export function initChatTab(elements, state) {
         voiceModeState.analyser.getByteFrequencyData(voiceModeState.dataArray);
         
         // Draw frequency bars (spectrogram style)
-        const barCount = Math.min(64, voiceModeState.dataArray.length);
+        const barCount = Math.min(SPECTROGRAM_BAR_COUNT, voiceModeState.dataArray.length);
         const barWidth = width / barCount;
         
         for (let i = 0; i < barCount; i++) {
@@ -294,7 +338,7 @@ export function initChatTab(elements, state) {
                 onError: (error) => {
                     console.error('Microphone access error:', error);
                     showToast('error', `Microphone access denied: ${error.message}`);
-                    updateVoiceMicStatus('Microphone access denied');
+                    updateVoiceModeStatus('Microphone access denied', false);
                 }
             });
             
@@ -319,28 +363,35 @@ export function initChatTab(elements, state) {
             // Set recording state BEFORE setting up VAD (VAD checks this)
             voiceModeState.isRecording = true;
             
-            // Set up VAD
-            voiceModeState.vadChecker = createVADChecker(
-                voiceModeState.analyser,
-                voiceModeState.dataArray,
-                {
-                    isRecording: () => voiceModeState.isRecording,
-                    onVoiceDetected: (audioLevel) => {
-                        // Voice detected
-                    },
-                    onSilenceDetected: (silenceDuration, audioLevel) => {
-                        console.log('[Dictating Mode] Silence detected, stopping recording', {
-                            silenceDuration,
-                            audioLevel,
-                            transcript: voiceModeState.transcript
-                        });
-                        stopRecording();
-                    },
-                    onSilenceWarning: (silenceDuration) => {
-                        // Optional: show warning
+            // Set up VAD with error handling
+            try {
+                voiceModeState.vadChecker = createVADChecker(
+                    voiceModeState.analyser,
+                    voiceModeState.dataArray,
+                    {
+                        isRecording: () => voiceModeState.isRecording,
+                        onVoiceDetected: (audioLevel) => {
+                            // Voice detected
+                        },
+                        onSilenceDetected: (silenceDuration, audioLevel) => {
+                            console.log('[Dictating Mode] Silence detected, stopping recording', {
+                                silenceDuration,
+                                audioLevel,
+                                transcript: voiceModeState.transcript
+                            });
+                            stopRecording();
+                        },
+                        onSilenceWarning: (silenceDuration) => {
+                            // Optional: show warning
+                        }
                     }
-                }
-            );
+                );
+            } catch (error) {
+                console.error('[Dictating Mode] Failed to create VAD checker:', error);
+                showToast('error', `Failed to initialize voice detection: ${error.message}`);
+                // Continue without VAD - user can manually stop recording
+                voiceModeState.vadChecker = null;
+            }
             
             // Set up speech recognition
             if (isSpeechRecognitionSupported()) {
@@ -373,12 +424,32 @@ export function initChatTab(elements, state) {
                 
                 voiceModeState.speechRecognition.onerror = (event) => {
                     console.error('[Dictating Mode] Speech recognition error:', event.error);
+                    const errorMessages = {
+                        'no-speech': 'No speech detected. Please speak clearly.',
+                        'audio-capture': 'Microphone not accessible. Please check permissions.',
+                        'not-allowed': 'Microphone access denied. Please allow microphone access.',
+                        'network': 'Network error. Please check your connection.',
+                        'aborted': 'Speech recognition aborted.',
+                        'service-not-allowed': 'Speech recognition service not allowed.',
+                        'bad-grammar': 'Speech recognition grammar error.',
+                        'language-not-supported': 'Language not supported for speech recognition.'
+                    };
+                    
+                    const errorMessage = errorMessages[event.error] || `Speech recognition error: ${event.error}`;
+                    
                     if (event.error === 'no-speech') {
-                        // This is normal, just continue
-                        console.log('[Dictating Mode] No speech detected (this is normal)');
+                        // This is normal during pauses, just log it
+                        console.log('[Dictating Mode] No speech detected (this is normal during pauses)');
+                    } else if (event.error === 'not-allowed' || event.error === 'audio-capture') {
+                        // Critical errors - stop recording
+                        console.error('[Dictating Mode] Critical speech recognition error:', event);
+                        showToast('error', errorMessage);
+                        updateVoiceModeStatus('Microphone access error', false);
+                        stopRecording();
                     } else {
+                        // Other errors - show warning but continue
                         console.error('[Dictating Mode] Speech recognition error details:', event);
-                        showToast('error', `Speech recognition error: ${event.error}`);
+                        showToast('warning', errorMessage);
                     }
                 };
                 
@@ -396,8 +467,15 @@ export function initChatTab(elements, state) {
                 voiceModeState.speechRecognition.start();
             }
             
-            // Start VAD
-            voiceModeState.vadChecker.start();
+            // Start VAD (if successfully created)
+            if (voiceModeState.vadChecker) {
+                try {
+                    voiceModeState.vadChecker.start();
+                } catch (error) {
+                    console.error('[Dictating Mode] Failed to start VAD:', error);
+                    showToast('warning', 'Voice detection may not work properly. You can manually stop recording.');
+                }
+            }
             
             // Start visualization
             startAudioVisualization();
@@ -536,6 +614,9 @@ export function initChatTab(elements, state) {
         // Add user message to chat (final version)
         addChatMessage(elements.chatMessages, 'user', message);
         
+        // Announce user message to screen readers
+        announceToScreenReader(`You said: ${message}`, 'polite');
+        
         try {
             const data = await sendVoiceChatMessage(
                 message,
@@ -567,7 +648,11 @@ export function initChatTab(elements, state) {
             
             // Update with complete content
             if (botMessage) {
-                updateMessageState(botMessage, 'complete', data.reply || 'No response received');
+                const replyText = data.reply || 'No response received';
+                updateMessageState(botMessage, 'complete', replyText);
+                
+                // Announce bot response to screen readers
+                announceToScreenReader(`Bot response: ${replyText}`, 'polite');
                 
                 // Add audio player for bot messages with audio
                 if (data.audio_base64) {
@@ -583,7 +668,12 @@ export function initChatTab(elements, state) {
                         const audioUrl = URL.createObjectURL(blob);
                         audioElement.src = audioUrl;
                         if (audioElement.previousUrl) {
-                            URL.revokeObjectURL(audioElement.previousUrl);
+                            try {
+                                URL.revokeObjectURL(audioElement.previousUrl);
+                            } catch (e) {
+                                // URL may have already been revoked, ignore error
+                                console.warn('Error revoking previous audio URL:', e);
+                            }
                         }
                         audioElement.previousUrl = audioUrl;
                         
@@ -605,13 +695,16 @@ export function initChatTab(elements, state) {
             
         } catch (error) {
             console.error('Voice chat error:', error);
+            const errorMessage = `Sorry, I'm having trouble with the voice chat. ${error.message}`;
             addChatMessage(
                 elements.chatMessages,
                 'bot',
-                `Sorry, I'm having trouble with the voice chat. ${error.message}`
+                errorMessage
             );
             updateVoiceModeStatus('Click microphone to start recording');
             showToast('error', `Error: ${error.message}`);
+            // Announce error to screen readers
+            announceToScreenReader(`Voice chat error: ${error.message}`, 'assertive');
         }
     }
     
@@ -621,7 +714,7 @@ export function initChatTab(elements, state) {
         
         const now = Date.now();
         // Throttle updates to avoid too frequent DOM updates
-        if (now - voiceModeState.lastTranscriptUpdate < 100 && isInterim) {
+        if (now - voiceModeState.lastTranscriptUpdate < TRANSCRIPT_UPDATE_THROTTLE_MS && isInterim) {
             return;
         }
         voiceModeState.lastTranscriptUpdate = now;
@@ -676,6 +769,9 @@ export function initChatTab(elements, state) {
                 statusText.classList.remove('recording');
             }
         }
+        
+        // Update ARIA live region for screen readers
+        announceToScreenReader(status, 'polite');
     }
     
     // Start recording timer
@@ -709,7 +805,7 @@ export function initChatTab(elements, state) {
                     statusText.innerHTML = `Listening... <span class="recording-indicator">● ${timeStr}</span>`;
                 }
             }
-        }, 100);
+        }, RECORDING_TIMER_INTERVAL_MS);
     }
     
     // Stop recording timer
@@ -755,7 +851,7 @@ export function initChatTab(elements, state) {
         
         // Get selected language
         if (elements.voiceModeLanguage) {
-            voiceModeState.selectedLanguage = elements.voiceModeLanguage.value || 'en_US';
+            voiceModeState.selectedLanguage = elements.voiceModeLanguage.value || DEFAULT_LANGUAGE;
         }
         
         updateVoiceModeStatus('Click microphone to start recording');
@@ -848,35 +944,29 @@ export function initChatTab(elements, state) {
         }
         
         // Setup dictating mode toggle
-        if (elements.voiceModeToggleBtn) {
-            elements.voiceModeToggleBtn.addEventListener('click', () => {
-                if (voiceModeState.isActive) {
-                    // If dictating mode is active, toggle recording
-                    if (voiceModeState.isRecording) {
-                        stopRecording();
-                    } else {
-                        startRecording();
-                    }
+        const voiceToggleHandler = () => {
+            if (voiceModeState.isActive) {
+                // If dictating mode is active, toggle recording
+                if (voiceModeState.isRecording) {
+                    stopRecording();
                 } else {
-                    // Enter dictating mode
-                enterVoiceMode();
+                    startRecording();
                 }
-            });
-        }
+            } else {
+                // Enter dictating mode
+                enterVoiceMode();
+            }
+        };
+        addEventListenerWithCleanup(elements.voiceModeToggleBtn, 'click', voiceToggleHandler);
         
         // Exit dictating mode
-        if (elements.exitVoiceModeBtn) {
-            elements.exitVoiceModeBtn.addEventListener('click', () => {
-                exitVoiceMode();
-            });
-        }
+        addEventListenerWithCleanup(elements.exitVoiceModeBtn, 'click', exitVoiceMode);
         
         // Language change handler
-        if (elements.voiceModeLanguage) {
-            elements.voiceModeLanguage.addEventListener('change', (e) => {
-                voiceModeState.selectedLanguage = e.target.value || 'en_US';
-            });
-        }
+        const languageChangeHandler = (e) => {
+            voiceModeState.selectedLanguage = e.target.value || DEFAULT_LANGUAGE;
+        };
+        addEventListenerWithCleanup(elements.voiceModeLanguage, 'change', languageChangeHandler);
     }
     
     // Initialize
@@ -893,9 +983,42 @@ export function initChatTab(elements, state) {
     return {
         handleChatSubmit,
         cleanup: () => {
+            // Clear all pending timeouts
+            timeoutIds.forEach(timeoutId => clearTimeout(timeoutId));
+            timeoutIds.length = 0;
+            
+            // Remove all event listeners
+            eventListeners.forEach(({ element, event, handler, options }) => {
+                if (element && element.removeEventListener) {
+                    element.removeEventListener(event, handler, options);
+                }
+            });
+            eventListeners.length = 0;
+            
             // Cleanup dictating mode when tab is switched away
             if (voiceModeState.isActive) {
                 exitVoiceMode();
+            }
+            
+            // Cleanup all audio blob URLs and spectrograms
+            if (elements.chatMessages) {
+                const messages = elements.chatMessages.querySelectorAll('.message');
+                messages.forEach(message => {
+                    // Clear any pending timeouts
+                    if (message._updateTimeouts) {
+                        message._updateTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+                        message._updateTimeouts = [];
+                    }
+                    
+                    // Cleanup spectrogram if present
+                    const audioElement = message.querySelector('audio.message-audio');
+                    if (audioElement && audioElement._spectrogramCleanup) {
+                        audioElement._spectrogramCleanup();
+                        audioElement._spectrogramCleanup = null;
+                    }
+                });
+                
+                cleanupAudioBlobUrls(elements.chatMessages);
             }
         }
     };

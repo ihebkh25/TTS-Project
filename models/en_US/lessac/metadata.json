@@ -1,0 +1,9 @@
+{
+  "id": "lessac",
+  "display_name": "Lessac",
+  "description": "English (US) voice, high quality",
+  "gender": "unknown",
+  "quality": "high",
+  "language": "en_US",
+  "sample_rate": 22050
+}

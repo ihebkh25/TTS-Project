@@ -1,0 +1,9 @@
+{
+  "id": "ryan",
+  "display_name": "Ryan",
+  "description": "English (US) male voice, high quality",
+  "gender": "male",
+  "quality": "high",
+  "language": "en_US",
+  "sample_rate": 22050
+}

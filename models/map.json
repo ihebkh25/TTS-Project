@@ -1,10 +1,10 @@
 {
   "de_DE": {
-    "config": "models/de_DE/de_DE-thorsten-medium.onnx.json",
+    "config": "models/de_DE/thorsten/config.json",
     "default_speaker": null
   },
   "en_US": {
-    "config": "models/en_US/en_US-norman-medium.onnx.json",
+    "config": "models/en_US/norman/config.json",
     "default_speaker": null
   },
   "fr_FR": {

@@ -1,0 +1,15 @@
+{
+  "id": "norman",
+  "display_name": "Norman",
+  "description": "English (US) male voice, medium quality",
+  "gender": "male",
+  "age_range": "adult",
+  "quality": "medium",
+  "sample_rate": 22050,
+  "language": "en_US",
+  "accent": "US",
+  "tags": ["male", "US", "medium"],
+  "preview_text": "Hello, I am Norman. This is a test of the text-to-speech system.",
+  "dataset": "norman"
+}
+

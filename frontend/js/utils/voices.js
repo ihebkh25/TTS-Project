@@ -114,60 +114,6 @@ export function populateLanguageSelect(languageSelect, voiceDetails, defaultLang
 }
 
 /**
- * Populate voice select dropdown with voices grouped by language
- * @deprecated Use populateLanguageSelect + populateVoiceSelectForLanguage for two-step selection
- */
-export function populateVoiceSelect(voiceSelect, voiceDetails, defaultLang = null, defaultVoice = null) {
-    if (!voiceSelect || !voiceDetails || voiceDetails.length === 0) return;
-    
-    // Group voices by language
-    const grouped = groupVoicesByLanguage(voiceDetails);
-    const languages = Object.keys(grouped).sort();
-    
-    // Clear existing options
-    voiceSelect.innerHTML = '<option value="">Select voice...</option>';
-    
-    // Determine default
-    const lang = defaultLang || (languages.includes('en_US') ? 'en_US' : (languages.includes('de_DE') ? 'de_DE' : languages[0]));
-    
-    languages.forEach(langCode => {
-        const langVoices = grouped[langCode];
-        const langName = formatLanguageName(langCode);
-        
-        // Create optgroup for language
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = langName;
-        
-        langVoices.forEach(voiceDetail => {
-            const { voice } = parseVoiceKey(voiceDetail.key);
-            const displayName = voiceDetail.display_name || voice || 'Default';
-            
-            // Build voice label - show premium indicator for high quality
-            let label = displayName;
-            if (voiceDetail.quality === 'high') {
-                label += ' [Premium]';
-            }
-            
-            const option = document.createElement('option');
-            option.value = voiceDetail.key; // Use full key "lang:voice"
-            option.textContent = label;
-            
-            // Set as selected if it's the default
-            if (defaultVoice && voiceDetail.key === defaultVoice) {
-                option.selected = true;
-            } else if (!defaultVoice && langCode === lang && langVoices.indexOf(voiceDetail) === 0) {
-                // First voice of default language
-                option.selected = true;
-            }
-            
-            optgroup.appendChild(option);
-        });
-        
-        voiceSelect.appendChild(optgroup);
-    });
-}
-
-/**
  * Populate voice select for a specific language only
  */
 export function populateVoiceSelectForLanguage(voiceSelect, lang, voiceDetails, defaultVoice = null) {
@@ -213,29 +159,4 @@ export function populateVoiceSelectForLanguage(voiceSelect, lang, voiceDetails, 
     });
 }
 
-/**
- * Populate speaker select for a given language (legacy support)
- * @deprecated Use populateVoiceSelect instead
- */
-export function populateSpeakerSelect(speakerSelect, language, voiceDetails) {
-    if (!speakerSelect || !language || !voiceDetails) return;
-    
-    const voiceDetail = voiceDetails.find(v => v.key === language);
-    if (!voiceDetail || voiceDetail.speaker === null) {
-        speakerSelect.innerHTML = '<option value="">Default</option>';
-        return;
-    }
-    
-    // Clear existing options
-    speakerSelect.innerHTML = '<option value="">Default</option>';
-    
-    // Add speaker options (assuming speaker is a number indicating number of speakers)
-    const numSpeakers = typeof voiceDetail.speaker === 'number' ? voiceDetail.speaker : 1;
-    for (let i = 0; i < numSpeakers; i++) {
-        const option = document.createElement('option');
-        option.value = i.toString();
-        option.textContent = `Speaker ${i + 1}`;
-        speakerSelect.appendChild(option);
-    }
-}
 

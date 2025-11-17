@@ -14,7 +14,6 @@ export function initElements() {
         ttsText: document.getElementById('ttsText'),
         ttsVoice: document.getElementById('ttsVoice'),
         ttsLanguage: document.getElementById('ttsLanguage'), // Language selector (first step)
-        ttsSpeaker: document.getElementById('ttsSpeaker'), // Legacy, may not exist
         streamText: document.getElementById('streamText'),
         ttsResultsContent: document.getElementById('ttsResultsContent'),
         streamVoice: document.getElementById('streamVoice'),
@@ -38,9 +37,7 @@ export function initElements() {
         clearChatBtn: document.getElementById('clearChatBtn'),
         exportChatBtn: document.getElementById('exportChatBtn'),
         
-        // Status and Output
-        ttsStatus: document.getElementById('ttsStatus'),
-        streamStatus: document.getElementById('streamStatus'),
+        // Status and Output (legacy status elements removed - using inline status messages now)
         chatStatus: document.getElementById('chatStatus'),
         serverStatus: document.getElementById('serverStatus'),
         serverInfo: document.getElementById('serverInfo'),

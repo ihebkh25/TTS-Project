@@ -1,0 +1,9 @@
+{
+  "id": "tom",
+  "display_name": "Tom",
+  "description": "French (France) voice, medium quality",
+  "gender": "male",
+  "quality": "medium",
+  "language": "fr_FR",
+  "sample_rate": 44100
+}

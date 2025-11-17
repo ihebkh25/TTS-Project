@@ -1,0 +1,9 @@
+{
+  "id": "paola",
+  "display_name": "Paola",
+  "description": "Italian (Italy) voice, medium quality",
+  "gender": "female",
+  "quality": "medium",
+  "language": "it_IT",
+  "sample_rate": 22050
+}

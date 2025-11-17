@@ -1,0 +1,9 @@
+{
+  "id": "mls",
+  "display_name": "MLS",
+  "description": "Dutch (Netherlands) voice, medium quality - Multilingual LibriSpeech dataset",
+  "gender": "unknown",
+  "quality": "medium",
+  "language": "nl_NL",
+  "sample_rate": 22050
+}

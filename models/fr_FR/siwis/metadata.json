@@ -1,0 +1,9 @@
+{
+  "id": "siwis",
+  "display_name": "Siwis",
+  "description": "French (France) voice, medium quality",
+  "gender": "unknown",
+  "quality": "medium",
+  "language": "fr_FR",
+  "sample_rate": 22050
+}

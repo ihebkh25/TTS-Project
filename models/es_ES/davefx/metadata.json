@@ -1,0 +1,9 @@
+{
+  "id": "davefx",
+  "display_name": "DaveFX",
+  "description": "Spanish (Spain) voice, medium quality",
+  "gender": "unknown",
+  "quality": "medium",
+  "language": "es_ES",
+  "sample_rate": 22050
+}

@@ -1,0 +1,9 @@
+{
+  "id": "ronnie",
+  "display_name": "Ronnie",
+  "description": "Dutch (Netherlands) voice, medium quality",
+  "gender": "unknown",
+  "quality": "medium",
+  "language": "nl_NL",
+  "sample_rate": 22050
+}

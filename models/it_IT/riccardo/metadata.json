@@ -1,0 +1,9 @@
+{
+  "id": "riccardo",
+  "display_name": "Riccardo",
+  "description": "Italian (Italy) voice, low quality (x_low)",
+  "gender": "male",
+  "quality": "x_low",
+  "language": "it_IT",
+  "sample_rate": 16000
+}

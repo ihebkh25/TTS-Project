@@ -13,10 +13,43 @@ const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
 export function setupCustomAudioPlayer(elements) {
     if (!elements.ttsPlayPause || !elements.ttsProgress || !elements.ttsAudio) return;
     
-    // Prevent duplicate setup - check if already initialized
+    // Clean up old event listeners and animation frames if re-initializing
     if (elements.ttsAudio._playerInitialized) {
-        console.log('[AudioPlayer] Audio player already initialized, skipping duplicate setup');
-        return;
+        console.log('[AudioPlayer] Cleaning up old audio player setup before re-initializing');
+        
+        // Clean up animation frame
+        if (elements.ttsAudio._cleanupAnimation) {
+            elements.ttsAudio._cleanupAnimation();
+        }
+        
+        // Remove old event listeners if they exist
+        if (elements.ttsAudio._playPauseHandler) {
+            elements.ttsPlayPause.removeEventListener('click', elements.ttsAudio._playPauseHandler);
+        }
+        if (elements.ttsAudio._progressInputHandler) {
+            elements.ttsProgress.removeEventListener('input', elements.ttsAudio._progressInputHandler);
+        }
+        if (elements.ttsAudio._progressChangeHandler) {
+            elements.ttsProgress.removeEventListener('change', elements.ttsAudio._progressChangeHandler);
+        }
+        if (elements.ttsAudio._speedHandler && elements.ttsSpeed) {
+            elements.ttsSpeed.removeEventListener('change', elements.ttsAudio._speedHandler);
+        }
+        if (elements.ttsAudio._loadedMetadataHandler) {
+            elements.ttsAudio.removeEventListener('loadedmetadata', elements.ttsAudio._loadedMetadataHandler);
+        }
+        if (elements.ttsAudio._timeUpdateHandler) {
+            elements.ttsAudio.removeEventListener('timeupdate', elements.ttsAudio._timeUpdateHandler);
+        }
+        if (elements.ttsAudio._playHandler) {
+            elements.ttsAudio.removeEventListener('play', elements.ttsAudio._playHandler);
+        }
+        if (elements.ttsAudio._pauseHandler) {
+            elements.ttsAudio.removeEventListener('pause', elements.ttsAudio._pauseHandler);
+        }
+        if (elements.ttsAudio._endedHandler) {
+            elements.ttsAudio.removeEventListener('ended', elements.ttsAudio._endedHandler);
+        }
     }
     
     // Mark as initialized
@@ -33,6 +66,7 @@ export function setupCustomAudioPlayer(elements) {
         }
     };
     elements.ttsPlayPause.addEventListener('click', playPauseHandler);
+    elements.ttsAudio._playPauseHandler = playPauseHandler; // Store for cleanup
     
     // Progress bar - handle both input (while dragging) and change (on release)
     let isDragging = false;
@@ -45,6 +79,7 @@ export function setupCustomAudioPlayer(elements) {
         }
     };
     elements.ttsProgress.addEventListener('input', progressInputHandler);
+    elements.ttsAudio._progressInputHandler = progressInputHandler; // Store for cleanup
     
     const progressChangeHandler = (e) => {
         isDragging = false;
@@ -54,6 +89,7 @@ export function setupCustomAudioPlayer(elements) {
         }
     };
     elements.ttsProgress.addEventListener('change', progressChangeHandler);
+    elements.ttsAudio._progressChangeHandler = progressChangeHandler; // Store for cleanup
     
     // Speed control
     if (elements.ttsSpeed) {
@@ -64,6 +100,7 @@ export function setupCustomAudioPlayer(elements) {
             }
         };
         elements.ttsSpeed.addEventListener('change', speedHandler);
+        elements.ttsAudio._speedHandler = speedHandler; // Store for cleanup
     }
     
     // Audio events
@@ -73,6 +110,7 @@ export function setupCustomAudioPlayer(elements) {
         }
     };
     elements.ttsAudio.addEventListener('loadedmetadata', loadedMetadataHandler);
+    elements.ttsAudio._loadedMetadataHandler = loadedMetadataHandler; // Store for cleanup
     
     // Smooth progress update using requestAnimationFrame
     let animationFrameId = null;
@@ -126,6 +164,7 @@ export function setupCustomAudioPlayer(elements) {
         }
     };
     elements.ttsAudio.addEventListener('timeupdate', timeUpdateHandler);
+    elements.ttsAudio._timeUpdateHandler = timeUpdateHandler; // Store for cleanup
     
     // Start smooth updates when playing
     const playHandler = () => {
@@ -195,8 +234,11 @@ export function setupCustomAudioPlayer(elements) {
     };
     
     elements.ttsAudio.addEventListener('play', playHandler);
+    elements.ttsAudio._playHandler = playHandler; // Store for cleanup
     elements.ttsAudio.addEventListener('pause', pauseHandler);
+    elements.ttsAudio._pauseHandler = pauseHandler; // Store for cleanup
     elements.ttsAudio.addEventListener('ended', endedHandler);
+    elements.ttsAudio._endedHandler = endedHandler; // Store for cleanup
     
     // Cleanup function to cancel animation frame if needed
     if (elements.ttsAudio._cleanupAnimation) {
@@ -215,6 +257,17 @@ export function setupCustomAudioPlayer(elements) {
  */
 export async function setupAudioPlayer(elements, base64Data) {
     try {
+        // Clean up any running animation frames before changing audio source
+        if (elements.ttsAudio._cleanupAnimation) {
+            elements.ttsAudio._cleanupAnimation();
+        }
+        
+        // Pause and reset audio before changing source to prevent stuttering
+        if (!elements.ttsAudio.paused) {
+            elements.ttsAudio.pause();
+        }
+        elements.ttsAudio.currentTime = 0;
+        
         const audioBlob = await base64ToBlob(base64Data, 'audio/wav');
         const audioUrl = URL.createObjectURL(audioBlob);
         
@@ -223,6 +276,9 @@ export async function setupAudioPlayer(elements, base64Data) {
             URL.revokeObjectURL(elements.ttsAudio.previousUrl);
         }
         elements.ttsAudio.previousUrl = audioUrl;
+        
+        // Wait a frame before setting new source to ensure cleanup is complete
+        await new Promise(resolve => requestAnimationFrame(resolve));
         
         elements.ttsAudio.src = audioUrl;
         elements.ttsAudioPlayer.classList.remove('hidden');
@@ -294,6 +350,30 @@ export function setupWaveformInteractivity(canvas, audioElement) {
     const container = canvas.closest('.audio-waveform-container');
     if (!container) return;
     
+    // Clean up old event listeners if they exist
+    if (canvas._clickHandler) {
+        canvas.removeEventListener('click', canvas._clickHandler);
+        container.removeEventListener('click', canvas._clickHandler);
+    }
+    if (canvas._hoverHandler) {
+        canvas.removeEventListener('mousemove', canvas._hoverHandler);
+        container.removeEventListener('mousemove', canvas._hoverHandler);
+    }
+    if (canvas._leaveHandler) {
+        canvas.removeEventListener('mouseleave', canvas._leaveHandler);
+        container.removeEventListener('mouseleave', canvas._leaveHandler);
+    }
+    if (canvas._enterHandler) {
+        canvas.removeEventListener('mouseenter', canvas._enterHandler);
+        container.removeEventListener('mouseenter', canvas._enterHandler);
+    }
+    
+    // Remove old tooltip if it exists
+    const oldTooltip = container.querySelector('.audio-waveform-tooltip');
+    if (oldTooltip) {
+        oldTooltip.remove();
+    }
+    
     // Create tooltip element
     const tooltip = document.createElement('div');
     tooltip.className = 'audio-waveform-tooltip';
@@ -311,6 +391,7 @@ export function setupWaveformInteractivity(canvas, audioElement) {
     };
     canvas.addEventListener('click', clickHandler);
     container.addEventListener('click', clickHandler);
+    canvas._clickHandler = clickHandler; // Store for cleanup
     
     // Hover to show time
     const hoverHandler = (e) => {
@@ -326,6 +407,7 @@ export function setupWaveformInteractivity(canvas, audioElement) {
     };
     canvas.addEventListener('mousemove', hoverHandler);
     container.addEventListener('mousemove', hoverHandler);
+    canvas._hoverHandler = hoverHandler; // Store for cleanup
     
     // Hide tooltip on mouse leave
     const leaveHandler = () => {
@@ -333,6 +415,7 @@ export function setupWaveformInteractivity(canvas, audioElement) {
     };
     canvas.addEventListener('mouseleave', leaveHandler);
     container.addEventListener('mouseleave', leaveHandler);
+    canvas._leaveHandler = leaveHandler; // Store for cleanup
     
     // Show tooltip on mouse enter
     const enterHandler = () => {
@@ -340,6 +423,7 @@ export function setupWaveformInteractivity(canvas, audioElement) {
     };
     canvas.addEventListener('mouseenter', enterHandler);
     container.addEventListener('mouseenter', enterHandler);
+    canvas._enterHandler = enterHandler; // Store for cleanup
 }
 
 /**

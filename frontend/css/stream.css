@@ -1,19 +1,21 @@
 /* Streaming Tab Specific Styles */
 
-/* Voice selection styling */
-#streamVoice {
-    min-height: 44px;
-    font-size: var(--font-base);
+/* Streaming progress bar wrapper (centered like TTS status messages) */
+.stream-progress-wrapper {
+    display: flex;
+    width: 100%;
+    padding: 1rem 0 0.5rem;
+    box-sizing: border-box;
+    animation: messageFadeIn 0.3s ease;
 }
 
-#streamVoice optgroup {
-    font-weight: 600;
-    color: var(--text-secondary);
-    padding: var(--space-xs) 0;
-}
-
-#streamVoice option {
-    padding: var(--space-sm) var(--space-md);
+.stream-progress-container {
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    box-sizing: border-box;
 }
 
 /* Streaming progress bar (during connection/streaming) */
@@ -22,31 +24,49 @@
     height: 4px;
     background: var(--surface);
     border-radius: 2px;
-    margin-top: var(--space-md);
     overflow: hidden;
 }
 
 .progress-fill {
     height: 100%;
-    background: var(--text);
+    background: var(--primary);
     width: 0%;
     transition: width 0.3s ease;
     border-radius: 2px;
 }
 
+/* Streaming Metrics Display wrapper (centered like TTS status messages) */
+.stream-metrics-wrapper {
+    display: flex;
+    width: 100%;
+    padding: 1rem 0;
+    box-sizing: border-box;
+    animation: messageFadeIn 0.3s ease;
+}
+
+.stream-metrics-container {
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    box-sizing: border-box;
+}
+
 /* Streaming Metrics Display */
 .stream-metrics {
-    margin-top: var(--space-md);
-    padding: var(--space-sm);
+    width: 100%;
+    padding: var(--space-md);
     background: var(--surface-light);
     border: 1px solid var(--border-lighter);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .metrics-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--space-sm);
+    gap: var(--space-md);
 }
 
 .metric-item {

@@ -48,7 +48,6 @@ export function initElements() {
         // Audio and Media
         ttsAudio: document.getElementById('ttsAudio'),
         streamAudio: document.getElementById('streamAudio'),
-        streamAudioContainer: document.getElementById('streamAudioContainer'),
         streamDownloadBtn: document.getElementById('streamDownloadBtn'),
         ttsSpectrogram: document.getElementById('ttsSpectrogram'),
         ttsSpectrogramCanvas: document.getElementById('ttsSpectrogramCanvas'),

@@ -288,7 +288,7 @@ export async function setupAudioPlayer(elements, base64Data) {
 /**
  * Setup waveform interactivity (click to seek, hover tooltip)
  */
-function setupWaveformInteractivity(canvas, audioElement) {
+export function setupWaveformInteractivity(canvas, audioElement) {
     if (!canvas || !audioElement) return;
     
     const container = canvas.closest('.audio-waveform-container');

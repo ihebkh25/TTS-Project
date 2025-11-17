@@ -193,6 +193,37 @@ body {
     padding: 0;
 }
 
+/* Stream tab special layout - full height (same as TTS and chat) */
+.main-content:has(#streamSection.active) {
+    padding: 0;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+    min-height: 0; /* Important for flex children */
+}
+
+.main-content:has(#streamSection.active) .header {
+    padding: var(--space-xl) var(--space-3xl) var(--space-lg);
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+/* Ensure tab content container fills remaining space for Stream */
+.main-content:has(#streamSection.active) #tabContentContainer {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Stream section should not have padding when active (handled by main-content) */
+.main-content:has(#streamSection.active) #streamSection {
+    padding: 0;
+}
+
 /* Custom Scrollbar - Right Positioned */
 .main-content::-webkit-scrollbar {
     width: 8px;

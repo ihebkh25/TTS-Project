@@ -7,7 +7,7 @@ import { base64ToBlob, generateWaveform } from '../utils/audio.js';
 import { initStreamSpectrogram, visualizeMelFrame } from '../components/spectrogram.js';
 import { startWebSocketStream } from '../services/websocket.js';
 import { formatTime } from '../utils/format.js';
-import { populateVoiceSelect, parseVoiceKey } from '../utils/voices.js';
+import { populateLanguageSelect, populateVoiceSelectForLanguage, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
 
 // Access AUDIO safely (it's a regular property, not a getter)
 const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
@@ -21,15 +21,52 @@ const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
 export function initStreamTab(elements, state) {
     const { voiceDetails = [] } = state;
     
-    // Populate voice select when voiceDetails are available
-    function populateVoiceDropdown() {
-        if (!elements.streamVoice || !voiceDetails || voiceDetails.length === 0) return;
-        populateVoiceSelect(elements.streamVoice, voiceDetails);
+    // Populate language and voice dropdowns when voiceDetails are available
+    function populateVoiceDropdowns() {
+        if (!voiceDetails || voiceDetails.length === 0) return;
+        
+        // Populate language dropdown
+        if (elements.streamLanguage) {
+            populateLanguageSelect(elements.streamLanguage, voiceDetails);
+            
+            // Set up language change handler
+            elements.streamLanguage.addEventListener('change', handleLanguageChange);
+            
+            // Trigger initial population if a language is already selected
+            if (elements.streamLanguage.value) {
+                handleLanguageChange();
+            }
+        }
     }
     
-    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    // Handle language selection change
+    function handleLanguageChange() {
+        const selectedLang = elements.streamLanguage?.value;
+        const voiceSelect = elements.streamVoice;
+        
+        if (!voiceSelect) return;
+        
+        if (!selectedLang) {
+            // No language selected - disable voice dropdown
+            voiceSelect.disabled = true;
+            voiceSelect.innerHTML = '<option value="">Select language first...</option>';
+            return;
+        }
+        
+        // Enable voice dropdown and populate with voices for selected language
+        voiceSelect.disabled = false;
+        populateVoiceSelectForLanguage(voiceSelect, selectedLang, voiceDetails);
+        
+        // Auto-select default voice for the language
+        const defaultVoice = getDefaultVoiceForLanguage(selectedLang, voiceDetails);
+        if (defaultVoice && voiceSelect.querySelector(`option[value="${defaultVoice.key}"]`)) {
+            voiceSelect.value = defaultVoice.key;
+        }
+    }
+    
+    // Populate dropdowns on initialization if voiceDetails are already loaded
     if (voiceDetails && voiceDetails.length > 0) {
-        populateVoiceDropdown();
+        populateVoiceDropdowns();
     }
     let streamSpectrogramState = null;
     let streamMetadata = null;
@@ -150,10 +187,16 @@ export function initStreamTab(elements, state) {
         e.preventDefault();
         
         const text = elements.streamText.value.trim();
+        const selectedLang = elements.streamLanguage?.value;
         const voiceKey = elements.streamVoice.value;
         
         if (!text) {
             showStatus(elements.streamStatus, 'error', 'Please enter some text to stream');
+            return;
+        }
+        
+        if (!selectedLang) {
+            showStatus(elements.streamStatus, 'error', 'Please select a language');
             return;
         }
         
@@ -421,9 +464,9 @@ export function initStreamTab(elements, state) {
     setupEventListeners();
     setupStreamAudioPlayer();
     
-    return {
-        handleStreamSubmit,
-        populateVoiceDropdown
-    };
+        return {
+            handleStreamSubmit,
+            populateVoiceDropdown: populateVoiceDropdowns
+        };
 }
 

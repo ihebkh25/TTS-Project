@@ -7,7 +7,7 @@ import { showToast } from '../utils/toast.js';
 import { base64ToBlob } from '../utils/audio.js';
 import { setupAudioPlayer } from '../components/audioPlayer.js';
 import { visualizeAudioSpectrogram } from '../components/spectrogram.js';
-import { populateVoiceSelect, parseVoiceKey } from '../utils/voices.js';
+import { populateLanguageSelect, populateVoiceSelectForLanguage, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
 
 /**
  * Initialize TTS tab
@@ -18,15 +18,52 @@ import { populateVoiceSelect, parseVoiceKey } from '../utils/voices.js';
 export function initTtsTab(elements, state) {
     const { setCurrentAudioBlob, voiceDetails = [] } = state;
     
-    // Populate voice select when voiceDetails are available
-    function populateVoiceDropdown() {
-        if (!elements.ttsVoice || !voiceDetails || voiceDetails.length === 0) return;
-        populateVoiceSelect(elements.ttsVoice, voiceDetails);
+    // Populate language and voice dropdowns when voiceDetails are available
+    function populateVoiceDropdowns() {
+        if (!voiceDetails || voiceDetails.length === 0) return;
+        
+        // Populate language dropdown
+        if (elements.ttsLanguage) {
+            populateLanguageSelect(elements.ttsLanguage, voiceDetails);
+            
+            // Set up language change handler
+            elements.ttsLanguage.addEventListener('change', handleLanguageChange);
+            
+            // Trigger initial population if a language is already selected
+            if (elements.ttsLanguage.value) {
+                handleLanguageChange();
+            }
+        }
     }
     
-    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    // Handle language selection change
+    function handleLanguageChange() {
+        const selectedLang = elements.ttsLanguage?.value;
+        const voiceSelect = elements.ttsVoice;
+        
+        if (!voiceSelect) return;
+        
+        if (!selectedLang) {
+            // No language selected - disable voice dropdown
+            voiceSelect.disabled = true;
+            voiceSelect.innerHTML = '<option value="">Select language first...</option>';
+            return;
+        }
+        
+        // Enable voice dropdown and populate with voices for selected language
+        voiceSelect.disabled = false;
+        populateVoiceSelectForLanguage(voiceSelect, selectedLang, voiceDetails);
+        
+        // Auto-select default voice for the language
+        const defaultVoice = getDefaultVoiceForLanguage(selectedLang, voiceDetails);
+        if (defaultVoice && voiceSelect.querySelector(`option[value="${defaultVoice.key}"]`)) {
+            voiceSelect.value = defaultVoice.key;
+        }
+    }
+    
+    // Populate dropdowns on initialization if voiceDetails are already loaded
     if (voiceDetails && voiceDetails.length > 0) {
-        populateVoiceDropdown();
+        populateVoiceDropdowns();
     }
     
     // Show status message in the status container above audio player
@@ -101,13 +138,19 @@ export function initTtsTab(elements, state) {
     async function handleTtsSubmit(e) {
         e.preventDefault();
         
-        if (!elements.ttsText || !elements.ttsVoice) return;
+        if (!elements.ttsText || !elements.ttsLanguage || !elements.ttsVoice) return;
         
         const text = elements.ttsText.value.trim();
+        const selectedLang = elements.ttsLanguage.value;
         const voiceKey = elements.ttsVoice.value;
         
         if (!text) {
             showTtsStatus('error', 'Please enter some text to synthesize');
+            return;
+        }
+        
+        if (!selectedLang) {
+            showTtsStatus('error', 'Please select a language');
             return;
         }
         
@@ -279,10 +322,10 @@ export function initTtsTab(elements, state) {
     setupEventListeners();
     
     // Return public API
-    return {
-        handleTtsSubmit,
-        populateVoiceDropdown,
-        setupCharacterCounter
-    };
+        return {
+            handleTtsSubmit,
+            populateVoiceDropdown: populateVoiceDropdowns,
+            setupCharacterCounter
+        };
 }
 

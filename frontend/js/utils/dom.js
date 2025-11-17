@@ -13,12 +13,12 @@ export function initElements() {
         // Inputs
         ttsText: document.getElementById('ttsText'),
         ttsVoice: document.getElementById('ttsVoice'),
-        ttsLanguage: document.getElementById('ttsLanguage'), // Legacy, may not exist
+        ttsLanguage: document.getElementById('ttsLanguage'), // Language selector (first step)
         ttsSpeaker: document.getElementById('ttsSpeaker'), // Legacy, may not exist
         streamText: document.getElementById('streamText'),
         ttsResultsContent: document.getElementById('ttsResultsContent'),
         streamVoice: document.getElementById('streamVoice'),
-        streamLanguage: document.getElementById('streamLanguage'), // Legacy, may not exist
+        streamLanguage: document.getElementById('streamLanguage'), // Language selector (first step)
         chatInput: document.getElementById('chatInput'),
         chatMicBtn: document.getElementById('chatMicBtn'),
         voiceModeToggleBtn: document.getElementById('voiceModeToggleBtn'),
@@ -86,7 +86,7 @@ export function initElements() {
         voiceBotSpectrogram: document.getElementById('voiceBotSpectrogram'),
         voiceChatStatus: document.getElementById('voiceChatStatus'),
         voiceChatVoice: document.getElementById('voiceChatVoice'),
-        voiceChatLanguage: document.getElementById('voiceChatLanguage'), // Legacy, may not exist
+        voiceChatLanguage: document.getElementById('voiceChatLanguage'), // Language selector (first step)
         voiceTranscriptContainer: document.getElementById('voiceTranscriptContainer'),
         voiceTranscriptText: document.getElementById('voiceTranscriptText'),
         voiceConversationLog: document.getElementById('voiceConversationLog'),

@@ -99,13 +99,19 @@
             </button>
         </div>
         
-        <!-- Voice selection controls (like dictation mode) -->
+        <!-- Voice selection controls (two-step: language first, then voice) -->
         <div class="tts-voice-controls" id="ttsVoiceControls">
             <div class="tts-voice-controls-row">
+                <div class="tts-language-select-compact-wrapper">
+                    <label for="ttsLanguage" class="tts-voice-label-compact">Language:</label>
+                    <select id="ttsLanguage" name="language" required class="tts-voice-select-compact">
+                        <option value="">Select language...</option>
+                    </select>
+                </div>
                 <div class="tts-voice-select-compact-wrapper">
                     <label for="ttsVoice" class="tts-voice-label-compact">Voice:</label>
-                    <select id="ttsVoice" name="voice" required class="tts-voice-select-compact">
-                        <option value="">Select voice...</option>
+                    <select id="ttsVoice" name="voice" required class="tts-voice-select-compact" disabled>
+                        <option value="">Select language first...</option>
                     </select>
                 </div>
             </div>

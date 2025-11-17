@@ -291,15 +291,27 @@
 .tts-voice-controls-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 
+.tts-language-select-compact-wrapper,
 .tts-voice-select-compact-wrapper {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex: 1;
+    min-width: 0;
+}
+
+.tts-language-select-compact-wrapper {
+    flex: 1;
+    min-width: 140px;
+}
+
+.tts-voice-select-compact-wrapper {
+    flex: 1;
+    min-width: 140px;
 }
 
 .tts-voice-label-compact {
@@ -320,8 +332,13 @@
     transition: all 0.2s ease;
     min-width: 120px;
     flex: 1;
-    max-width: 200px;
     min-height: 32px;
+}
+
+.tts-voice-select-compact:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--surface-lighter);
 }
 
 .tts-voice-select-compact:hover {

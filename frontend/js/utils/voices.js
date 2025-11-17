@@ -83,7 +83,39 @@ export function populateLanguageSelects(selects, voices, defaultLang = null) {
 }
 
 /**
+ * Populate language select dropdown with available languages
+ */
+export function populateLanguageSelect(languageSelect, voiceDetails, defaultLang = null) {
+    if (!languageSelect || !voiceDetails || voiceDetails.length === 0) return;
+    
+    // Group voices by language to get unique languages
+    const grouped = groupVoicesByLanguage(voiceDetails);
+    const languages = Object.keys(grouped).sort();
+    
+    // Clear existing options
+    languageSelect.innerHTML = '<option value="">Select language...</option>';
+    
+    // Determine default
+    const lang = defaultLang || (languages.includes('en_US') ? 'en_US' : (languages.includes('de_DE') ? 'de_DE' : languages[0]));
+    
+    languages.forEach(langCode => {
+        const langName = formatLanguageName(langCode);
+        const option = document.createElement('option');
+        option.value = langCode;
+        option.textContent = langName;
+        
+        // Set as selected if it's the default
+        if (langCode === lang) {
+            option.selected = true;
+        }
+        
+        languageSelect.appendChild(option);
+    });
+}
+
+/**
  * Populate voice select dropdown with voices grouped by language
+ * @deprecated Use populateLanguageSelect + populateVoiceSelectForLanguage for two-step selection
  */
 export function populateVoiceSelect(voiceSelect, voiceDetails, defaultLang = null, defaultVoice = null) {
     if (!voiceSelect || !voiceDetails || voiceDetails.length === 0) return;

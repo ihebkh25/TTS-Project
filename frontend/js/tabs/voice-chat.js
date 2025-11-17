@@ -11,7 +11,7 @@ import {
 import { ttsLangToSpeechLang } from '../utils/format.js';
 import { visualizeAudioSpectrogram } from '../components/spectrogram.js';
 import { CONFIG } from '../config.js';
-import { populateVoiceSelect, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
+import { populateLanguageSelect, populateVoiceSelectForLanguage, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
 
 const DEFAULT_LANGUAGE = 'en_US';
 
@@ -24,19 +24,67 @@ export function initVoiceChatTab(elements, state) {
     const botSpecCanvas = elements.voiceBotSpectrogram;
     const statusEl = elements.voiceChatStatus;
     const voiceSelect = elements.voiceChatVoice;
+    const languageSelect = elements.voiceChatLanguage;
     const transcriptContainer = elements.voiceTranscriptContainer;
     const transcriptText = elements.voiceTranscriptText;
     const convoLog = elements.voiceConversationLog;
     
-    // Populate voice select when voiceDetails are available
-    function populateVoiceDropdown() {
-        if (!voiceSelect || !voiceDetails || voiceDetails.length === 0) return;
-        populateVoiceSelect(voiceSelect, voiceDetails, DEFAULT_LANGUAGE);
+    // Populate language and voice dropdowns when voiceDetails are available
+    function populateVoiceDropdowns() {
+        if (!voiceDetails || voiceDetails.length === 0) return;
+        
+        // Populate language dropdown
+        if (languageSelect) {
+            populateLanguageSelect(languageSelect, voiceDetails, DEFAULT_LANGUAGE);
+            
+            // Set up language change handler
+            languageSelect.addEventListener('change', handleLanguageChange);
+            
+            // Trigger initial population if a language is already selected
+            if (languageSelect.value) {
+                handleLanguageChange();
+            } else {
+                // Auto-select default language
+                const defaultLang = DEFAULT_LANGUAGE;
+                if (languageSelect.querySelector(`option[value="${defaultLang}"]`)) {
+                    languageSelect.value = defaultLang;
+                    handleLanguageChange();
+                }
+            }
+        }
     }
     
-    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    // Handle language selection change
+    function handleLanguageChange() {
+        const selectedLang = languageSelect?.value;
+        
+        if (!voiceSelect) return;
+        
+        if (!selectedLang) {
+            // No language selected - disable voice dropdown
+            voiceSelect.disabled = true;
+            voiceSelect.innerHTML = '<option value="">Select language first...</option>';
+            stateVoice.selectedLanguage = DEFAULT_LANGUAGE;
+            stateVoice.selectedVoice = null;
+            return;
+        }
+        
+        // Enable voice dropdown and populate with voices for selected language
+        voiceSelect.disabled = false;
+        populateVoiceSelectForLanguage(voiceSelect, selectedLang, voiceDetails);
+        
+        // Auto-select default voice for the language
+        const defaultVoice = getDefaultVoiceForLanguage(selectedLang, voiceDetails);
+        if (defaultVoice && voiceSelect.querySelector(`option[value="${defaultVoice.key}"]`)) {
+            voiceSelect.value = defaultVoice.key;
+            stateVoice.selectedLanguage = selectedLang;
+            stateVoice.selectedVoice = defaultVoice.key;
+        }
+    }
+    
+    // Populate dropdowns on initialization if voiceDetails are already loaded
     if (voiceDetails && voiceDetails.length > 0) {
-        populateVoiceDropdown();
+        populateVoiceDropdowns();
     }
     
     if (!micBtn || !micCanvas || !botCanvas) {
@@ -90,7 +138,7 @@ export function initVoiceChatTab(elements, state) {
         }
     };
     
-    // Update selected language and voice when voice select changes
+    // Update selected voice when voice select changes (language is already set)
     if (voiceSelect) {
         voiceSelect.addEventListener('change', () => {
             const voiceKey = voiceSelect.value;
@@ -298,20 +346,23 @@ export function initVoiceChatTab(elements, state) {
     
     async function startRecording() {
         if (stateVoice.isRecording) return;
-        // Get selected voice or use default
+        
+        // Get selected language and voice
+        const selectedLang = languageSelect?.value || DEFAULT_LANGUAGE;
         const voiceKey = voiceSelect?.value;
+        
         if (voiceKey) {
             const { lang, voice } = parseVoiceKey(voiceKey);
             stateVoice.selectedLanguage = lang;
             stateVoice.selectedVoice = voiceKey;
         } else {
-            // Fallback: find default voice for default language
-            const defaultVoice = getDefaultVoiceForLanguage(DEFAULT_LANGUAGE, voiceDetails);
+            // Fallback to default voice for selected language
+            const defaultVoice = getDefaultVoiceForLanguage(selectedLang, voiceDetails);
             if (defaultVoice) {
-                stateVoice.selectedLanguage = DEFAULT_LANGUAGE;
+                stateVoice.selectedLanguage = selectedLang;
                 stateVoice.selectedVoice = defaultVoice.key;
             } else {
-                stateVoice.selectedLanguage = DEFAULT_LANGUAGE;
+                stateVoice.selectedLanguage = selectedLang;
                 stateVoice.selectedVoice = null;
             }
         }
@@ -563,7 +614,7 @@ export function initVoiceChatTab(elements, state) {
     micBtn.addEventListener('click', onMicClick);
     
     return {
-        populateVoiceDropdown,
+        populateVoiceDropdown: populateVoiceDropdowns,
         cleanup: () => {
             window.removeEventListener('resize', resizeCanvases);
             if (stateVoice.isRecording) stopRecording();

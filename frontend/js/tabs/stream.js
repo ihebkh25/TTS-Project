@@ -8,6 +8,7 @@ import { initStreamSpectrogram, visualizeMelFrame } from '../components/spectrog
 import { startWebSocketStream } from '../services/websocket.js';
 import { formatTime } from '../utils/format.js';
 import { populateLanguageSelect, populateVoiceSelectForLanguage, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
+import { showToast } from '../utils/toast.js';
 
 // Access AUDIO safely (it's a regular property, not a getter)
 const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
@@ -70,6 +71,7 @@ export function initStreamTab(elements, state) {
     }
     let streamSpectrogramState = null;
     let streamMetadata = null;
+    let finalStreamMetrics = null; // Store final metrics to display after completion
     
     // Set up character counter with auto-resize (like TTS tab)
     function setupCharacterCounter() {
@@ -113,6 +115,47 @@ export function initStreamTab(elements, state) {
         if (statusWrapper) {
             statusWrapper.style.display = 'none';
         }
+    }
+    
+    // Display final streaming metrics as toast notification
+    function displayFinalStreamMetrics(chunks, samples) {
+        // Get final values from stored metrics or use defaults
+        const metrics = finalStreamMetrics || {};
+        const metadata = metrics.metadata || streamMetadata;
+        
+        // Calculate final values
+        const totalChunks = metrics.totalChunks || chunks || 0;
+        const finalChunks = chunks || metrics.chunks || 0;
+        
+        // Calculate average chunks per second if we have timing data
+        let avgChunksPerSec = 0;
+        if (metrics.chunksPerSecond && metrics.chunksPerSecond > 0) {
+            avgChunksPerSec = metrics.chunksPerSecond;
+        } else if (metadata && metadata.estimatedDuration && metadata.estimatedDuration > 0) {
+            // Fallback: estimate from duration
+            avgChunksPerSec = totalChunks / metadata.estimatedDuration;
+        }
+        
+        // Get final time values
+        const totalTime = metadata?.estimatedDuration || 0;
+        
+        // Build metrics message for toast
+        const metricsParts = [];
+        metricsParts.push(`Chunks: ${finalChunks} / ${totalChunks}`);
+        if (avgChunksPerSec > 0) {
+            metricsParts.push(`Speed: ${avgChunksPerSec.toFixed(1)} chunks/s`);
+        }
+        if (totalTime > 0) {
+            metricsParts.push(`Duration: ${totalTime.toFixed(1)}s`);
+        }
+        if (samples) {
+            metricsParts.push(`Samples: ${samples.toLocaleString()}`);
+        }
+        
+        const metricsMessage = metricsParts.join(' • ');
+        
+        // Show toast notification with metrics
+        showToast('success', `Streaming complete! ${metricsMessage}`, 8000);
     }
     
     // Set up custom audio player for streaming
@@ -350,6 +393,8 @@ export function initStreamTab(elements, state) {
                 if (progressWrapper) {
                     progressWrapper.classList.add('hidden');
                 }
+                // Reset final metrics
+                finalStreamMetrics = null;
                 return;
             }
         
@@ -375,11 +420,7 @@ export function initStreamTab(elements, state) {
             elements.streamSpectrogram.classList.add('hidden');
         }
         
-        // Hide metrics and progress
-        const metricsWrapper = document.querySelector('.stream-metrics-wrapper');
-        if (metricsWrapper) {
-            metricsWrapper.classList.add('hidden');
-        }
+        // Hide progress (will be shown when streaming starts)
         const progressWrapper = document.querySelector('.stream-progress-wrapper');
         if (progressWrapper) {
             progressWrapper.classList.add('hidden');
@@ -420,30 +461,13 @@ export function initStreamTab(elements, state) {
                         progressWrapper.classList.remove('hidden');
                     }
                     
-                    // Show metrics wrapper
-                    const metricsWrapper = document.querySelector('.stream-metrics-wrapper');
-                    if (metricsWrapper) {
-                        metricsWrapper.classList.remove('hidden');
-                    }
+                    // Reset final metrics
+                    finalStreamMetrics = null;
                 },
                 onMetadata: (metadata) => {
                     streamMetadata = metadata;
                     console.log('[Stream] Metadata received:', metadata);
-                    
-                    // Update chunks display if we now have the actual total
-                    const metricsWrapper = document.querySelector('.stream-metrics-wrapper');
-                    if (metadata.totalChunks > 0 && metricsWrapper) {
-                        const streamMetrics = metricsWrapper.querySelector('.stream-metrics');
-                        if (streamMetrics) {
-                            const chunksDisplay = streamMetrics.querySelector('#streamChunks');
-                            if (chunksDisplay) {
-                                // Get current chunk number from the display or use metadata
-                                const currentText = chunksDisplay.textContent;
-                                const currentChunk = currentText.match(/^(\d+)/)?.[1] || metadata.totalChunks;
-                                chunksDisplay.textContent = `${currentChunk} / ${metadata.totalChunks}`;
-                            }
-                        }
-                    }
+                    // Metadata is stored for final metrics display
                 },
                 onStatus: (status, message) => {
                     console.log('[Stream] Status:', status, message);
@@ -463,48 +487,13 @@ export function initStreamTab(elements, state) {
                         progressFill.style.width = `${Math.min(100, chunks * 2)}%`;
                     }
                     
-                    // Update metrics display
-                    const metricsWrapper = document.querySelector('.stream-metrics-wrapper');
-                    if (metrics && metricsWrapper) {
-                        const streamMetrics = metricsWrapper.querySelector('.stream-metrics');
-                        if (streamMetrics) {
-                            const progressPercent = streamMetrics.querySelector('#streamProgressPercent');
-                            const chunksDisplay = streamMetrics.querySelector('#streamChunks');
-                            const chunksPerSec = streamMetrics.querySelector('#streamChunksPerSec');
-                            const timeDisplay = streamMetrics.querySelector('#streamTime');
-                            const timeRemaining = streamMetrics.querySelector('#streamTimeRemaining');
-                            
-                            if (progressPercent) {
-                                progressPercent.textContent = `${metrics.progress.toFixed(1)}%`;
-                            }
-                            
-                            if (chunksDisplay) {
-                                // Show "?" for total until we know the actual value
-                                if (metrics.totalChunks > 0) {
-                                    chunksDisplay.textContent = `${metrics.chunk} / ${metrics.totalChunks}`;
-                                } else {
-                                    chunksDisplay.textContent = `${metrics.chunk} / ?`;
-                                }
-                            }
-                            
-                            if (chunksPerSec) {
-                                chunksPerSec.textContent = `${metrics.chunksPerSecond.toFixed(1)} chunks/s`;
-                            }
-                            
-                            if (timeDisplay && streamMetadata) {
-                                const currentTime = metrics.timestamp || 0;
-                                const totalTime = streamMetadata.estimatedDuration || 0;
-                                timeDisplay.textContent = `${currentTime.toFixed(1)}s / ${totalTime.toFixed(1)}s`;
-                            }
-                            
-                            if (timeRemaining) {
-                                if (metrics.estimatedTimeRemaining !== null && metrics.estimatedTimeRemaining !== undefined) {
-                                    timeRemaining.textContent = `${metrics.estimatedTimeRemaining.toFixed(1)}s`;
-                                } else {
-                                    timeRemaining.textContent = '-';
-                                }
-                            }
-                        }
+                    // Store metrics for final display (don't show during streaming)
+                    if (metrics) {
+                        finalStreamMetrics = {
+                            ...metrics,
+                            chunks: chunks,
+                            metadata: streamMetadata
+                        };
                     }
                 },
                 onMelFrame: (melFrame) => {
@@ -528,6 +517,15 @@ export function initStreamTab(elements, state) {
                 waveformCanvas: elements.streamWaveform,
                 onComplete: async (wavBase64, chunks, samples) => {
                     try {
+                        // Hide progress bar
+                        const progressWrapper = document.querySelector('.stream-progress-wrapper');
+                        if (progressWrapper) {
+                            progressWrapper.classList.add('hidden');
+                        }
+                        
+                        // Display final metrics after streaming is complete
+                        displayFinalStreamMetrics(chunks, samples);
+                        
                         // Convert base64 to blob and set up audio
                         const audioBlob = await base64ToBlob(wavBase64, 'audio/wav');
                         const audioUrl = URL.createObjectURL(audioBlob);
@@ -633,8 +631,7 @@ export function initStreamTab(elements, state) {
                         
                         playAudio();
                         
-                        showStreamStatus('success', 
-                            `Streaming complete! Audio ready to play. Received ${chunks} chunks, ${samples} samples total.`);
+                        showStreamStatus('success', 'Streaming complete! Audio ready to play.');
                     } catch (error) {
                         console.error('[Stream] Error setting up audio:', error);
                         showStreamStatus('error', `Error setting up audio: ${error.message}`);

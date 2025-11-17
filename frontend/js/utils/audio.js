@@ -126,12 +126,12 @@ export async function generateWaveform(audioBlob, canvas, height = null) {
         const step = Math.ceil(data.length / width);
         const amp = canvasHeight / 2;
         
-        // Clear with light background for better contrast
-        ctx.fillStyle = '#1f1f1f'; // Dark gray background (matches surface-lighter)
+        // Clear with lighter background for better contrast
+        ctx.fillStyle = '#2a2a2a'; // Lighter dark gray background for better contrast
         ctx.fillRect(0, 0, width, canvasHeight);
         
-        // Draw center line for reference
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        // Draw center line for reference (more visible)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, amp);
@@ -162,26 +162,39 @@ export async function generateWaveform(audioBlob, canvas, height = null) {
         ctx.lineTo(width, amp);
         ctx.closePath();
         
-        // Add gradient overlay with better opacity for visibility
+        // Draw waveform with much brighter, more visible colors
         const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
         if (height) {
-            // Streaming waveform colors - more vibrant
-            gradient.addColorStop(0, 'rgba(99, 102, 241, 1.0)');      // Indigo - full opacity
-            gradient.addColorStop(0.5, 'rgba(139, 92, 246, 0.9)');    // Purple
-            gradient.addColorStop(1, 'rgba(168, 85, 247, 1.0)');      // Purple - full opacity
+            // Streaming waveform colors - very bright and visible
+            gradient.addColorStop(0, '#6366f1');      // Indigo - solid color
+            gradient.addColorStop(0.5, '#8b5cf6');    // Purple - solid color
+            gradient.addColorStop(1, '#a855f7');      // Purple - solid color
         } else {
-            // TTS waveform colors - more vibrant
-            gradient.addColorStop(0, 'rgba(99, 102, 241, 1.0)');      // Indigo - full opacity
-            gradient.addColorStop(0.5, 'rgba(168, 85, 247, 0.9)');    // Purple
-            gradient.addColorStop(1, 'rgba(20, 184, 166, 1.0)');      // Teal - full opacity
+            // TTS waveform colors - very bright and visible
+            gradient.addColorStop(0, '#6366f1');      // Indigo - solid color
+            gradient.addColorStop(0.5, '#a855f7');    // Purple - solid color
+            gradient.addColorStop(1, '#14b8a6');      // Teal - solid color
         }
         ctx.fillStyle = gradient;
         ctx.fill();
         
-        // Add subtle stroke for better definition
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
-        ctx.lineWidth = 1;
+        // Add strong stroke for better definition and visibility
+        ctx.strokeStyle = '#818cf8'; // Lighter indigo for stroke
+        ctx.lineWidth = 2;
         ctx.stroke();
+        
+        // Add bright highlight overlay for maximum visibility
+        const highlightGradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+        highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+        highlightGradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.15)');
+        highlightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+        highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        // Apply highlight overlay using lighter blend mode
+        ctx.globalCompositeOperation = 'lighten';
+        ctx.fillStyle = highlightGradient;
+        ctx.fillRect(0, 0, width, canvasHeight);
+        ctx.globalCompositeOperation = 'source-over';
         
     } catch (error) {
         console.error('Waveform generation error:', error);

@@ -6,9 +6,13 @@ import { convertF32ArrayToWavBase64, base64ToBlob, generateWaveform } from '../u
 const { STREAMING } = CONFIG;
 
 // Start WebSocket stream for TTS
-export function startWebSocketStream(text, language, callbacks) {
+export function startWebSocketStream(text, language, voice = null, callbacks) {
     const encodedText = encodeURIComponent(text);
-    const wsUrl = `${CONFIG.WS_BASE}/stream/${language}/${encodedText}`;
+    let wsUrl = `${CONFIG.WS_BASE}/stream/${language}/${encodedText}`;
+    // Add voice as query parameter if provided
+    if (voice) {
+        wsUrl += `?voice=${encodeURIComponent(voice)}`;
+    }
     
     let ws = null;
     let cleanup = null;

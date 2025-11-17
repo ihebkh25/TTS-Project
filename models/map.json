@@ -3,37 +3,37 @@
     "default_voice": "norman",
     "voices": {
       "amy": {
-        "config": "models/en_US/amy/config.json",
+        "config": "models/en_US/amy/config.onnx.json",
         "display_name": "Amy",
         "gender": "female",
         "quality": "medium"
       },
       "lessac": {
-        "config": "models/en_US/lessac/config.json",
+        "config": "models/en_US/lessac/config.onnx.json",
         "display_name": "Lessac",
         "gender": "unknown",
         "quality": "high"
       },
       "libritts": {
-        "config": "models/en_US/libritts/config.json",
+        "config": "models/en_US/libritts/config.onnx.json",
         "display_name": "LibriTTS",
         "gender": "unknown",
         "quality": "high"
       },
       "ljspeech": {
-        "config": "models/en_US/ljspeech/config.json",
+        "config": "models/en_US/ljspeech/config.onnx.json",
         "display_name": "LJSpeech",
         "gender": "unknown",
         "quality": "high"
       },
       "norman": {
-        "config": "models/en_US/norman/config.json",
+        "config": "models/en_US/norman/config.onnx.json",
         "display_name": "Norman",
         "gender": "male",
         "quality": "medium"
       },
       "ryan": {
-        "config": "models/en_US/ryan/config.json",
+        "config": "models/en_US/ryan/config.onnx.json",
         "display_name": "Ryan",
         "gender": "male",
         "quality": "high"
@@ -44,19 +44,19 @@
     "default_voice": "thorsten",
     "voices": {
       "mls": {
-        "config": "models/de_DE/mls/config.json",
+        "config": "models/de_DE/mls/config.onnx.json",
         "display_name": "MLS",
         "gender": "unknown",
         "quality": "medium"
       },
       "thorsten": {
-        "config": "models/de_DE/thorsten/config.json",
+        "config": "models/de_DE/thorsten/config.onnx.json",
         "display_name": "Thorsten",
         "gender": "male",
         "quality": "high"
       },
       "thorsten_emotional": {
-        "config": "models/de_DE/thorsten_emotional/config.json",
+        "config": "models/de_DE/thorsten_emotional/config.onnx.json",
         "display_name": "Thorsten Emotional",
         "gender": "male",
         "quality": "medium"
@@ -67,19 +67,19 @@
     "default_voice": "siwis",
     "voices": {
       "mls": {
-        "config": "models/fr_FR/mls/config.json",
+        "config": "models/fr_FR/mls/config.onnx.json",
         "display_name": "MLS",
         "gender": "unknown",
         "quality": "medium"
       },
       "siwis": {
-        "config": "models/fr_FR/siwis/config.json",
+        "config": "models/fr_FR/siwis/config.onnx.json",
         "display_name": "Siwis",
         "gender": "unknown",
         "quality": "medium"
       },
       "tom": {
-        "config": "models/fr_FR/tom/config.json",
+        "config": "models/fr_FR/tom/config.onnx.json",
         "display_name": "Tom",
         "gender": "male",
         "quality": "medium"
@@ -90,19 +90,19 @@
     "default_voice": "ronnie",
     "voices": {
       "mls": {
-        "config": "models/nl_NL/mls/config.json",
+        "config": "models/nl_NL/mls/config.onnx.json",
         "display_name": "MLS",
         "gender": "unknown",
         "quality": "medium"
       },
       "pim": {
-        "config": "models/nl_NL/pim/config.json",
+        "config": "models/nl_NL/pim/config.onnx.json",
         "display_name": "Pim",
         "gender": "unknown",
         "quality": "medium"
       },
       "ronnie": {
-        "config": "models/nl_NL/ronnie/config.json",
+        "config": "models/nl_NL/ronnie/config.onnx.json",
         "display_name": "Ronnie",
         "gender": "unknown",
         "quality": "medium"
@@ -113,13 +113,13 @@
     "default_voice": "sharvard",
     "voices": {
       "davefx": {
-        "config": "models/es_ES/davefx/config.json",
+        "config": "models/es_ES/davefx/config.onnx.json",
         "display_name": "DaveFX",
         "gender": "unknown",
         "quality": "medium"
       },
       "sharvard": {
-        "config": "models/es_ES/sharvard/config.json",
+        "config": "models/es_ES/sharvard/config.onnx.json",
         "display_name": "Sharvard",
         "gender": "unknown",
         "quality": "medium"
@@ -130,13 +130,13 @@
     "default_voice": "paola",
     "voices": {
       "paola": {
-        "config": "models/it_IT/paola/config.json",
+        "config": "models/it_IT/paola/config.onnx.json",
         "display_name": "Paola",
         "gender": "female",
         "quality": "medium"
       },
       "riccardo": {
-        "config": "models/it_IT/riccardo/config.json",
+        "config": "models/it_IT/riccardo/config.onnx.json",
         "display_name": "Riccardo",
         "gender": "male",
         "quality": "x_low"
@@ -144,19 +144,13 @@
     }
   },
   "uk_UA": {
-    "default_voice": "ukrainian_tts",
+    "default_voice": "lada",
     "voices": {
       "lada": {
-        "config": "models/uk_UA/lada/config.json",
+        "config": "models/uk_UA/lada/config.onnx.json",
         "display_name": "Lada",
         "gender": "female",
         "quality": "x_low"
-      },
-      "ukrainian_tts": {
-        "config": "models/uk_UA/ukrainian_tts/config.json",
-        "display_name": "Ukrainian TTS",
-        "gender": "unknown",
-        "quality": "medium"
       }
     }
   }

@@ -7,6 +7,7 @@ import { base64ToBlob, generateWaveform } from '../utils/audio.js';
 import { initStreamSpectrogram, visualizeMelFrame } from '../components/spectrogram.js';
 import { startWebSocketStream } from '../services/websocket.js';
 import { formatTime } from '../utils/format.js';
+import { populateVoiceSelect, parseVoiceKey } from '../utils/voices.js';
 
 // Access AUDIO safely (it's a regular property, not a getter)
 const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
@@ -14,10 +15,22 @@ const AUDIO = CONFIG?.AUDIO || { DEFAULT_SPEED: 1.0 };
 /**
  * Initialize Streaming tab
  * @param {Object} elements - DOM elements
- * @param {Object} state - State object with isStreaming, currentWebSocket, currentStreamAudioBlob
+ * @param {Object} state - State object with isStreaming, currentWebSocket, currentStreamAudioBlob, voiceDetails
  * @returns {Object} Tab handlers and cleanup functions
  */
 export function initStreamTab(elements, state) {
+    const { voiceDetails = [] } = state;
+    
+    // Populate voice select when voiceDetails are available
+    function populateVoiceDropdown() {
+        if (!elements.streamVoice || !voiceDetails || voiceDetails.length === 0) return;
+        populateVoiceSelect(elements.streamVoice, voiceDetails);
+    }
+    
+    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    if (voiceDetails && voiceDetails.length > 0) {
+        populateVoiceDropdown();
+    }
     let streamSpectrogramState = null;
     let streamMetadata = null;
     
@@ -137,17 +150,20 @@ export function initStreamTab(elements, state) {
         e.preventDefault();
         
         const text = elements.streamText.value.trim();
-        const language = elements.streamLanguage.value;
+        const voiceKey = elements.streamVoice.value;
         
         if (!text) {
             showStatus(elements.streamStatus, 'error', 'Please enter some text to stream');
             return;
         }
         
-        if (!language) {
-            showStatus(elements.streamStatus, 'error', 'Please select a language');
+        if (!voiceKey) {
+            showStatus(elements.streamStatus, 'error', 'Please select a voice');
             return;
         }
+        
+        // Parse voice key to get language and voice
+        const { lang: language, voice } = parseVoiceKey(voiceKey);
         
         if (state.isStreaming) {
             // Stop streaming
@@ -194,7 +210,7 @@ export function initStreamTab(elements, state) {
         }
         
         try {
-            const cleanup = await startWebSocketStream(text, language, {
+            const cleanup = await startWebSocketStream(text, language, voice, {
                 isStreaming: () => state.isStreaming,
                 onOpen: () => {
                     state.isStreaming = true;
@@ -406,7 +422,8 @@ export function initStreamTab(elements, state) {
     setupStreamAudioPlayer();
     
     return {
-        handleStreamSubmit
+        handleStreamSubmit,
+        populateVoiceDropdown
     };
 }
 

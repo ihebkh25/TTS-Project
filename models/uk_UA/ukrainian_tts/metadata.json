@@ -1,9 +1,0 @@
-{
-  "id": "ukrainian_tts",
-  "display_name": "Ukrainian TTS",
-  "description": "Ukrainian voice, medium quality - supports multiple speakers (0-2)",
-  "gender": "unknown",
-  "quality": "medium",
-  "language": "uk_UA",
-  "sample_rate": 22050
-}

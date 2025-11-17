@@ -355,6 +355,53 @@ select {
     cursor: pointer;
 }
 
+/* Voice Selection Dropdown Styling */
+select optgroup {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+    margin-top: var(--space-xs);
+}
+
+select optgroup:first-child {
+    margin-top: 0;
+}
+
+select option {
+    padding: var(--space-sm) var(--space-md);
+    font-size: var(--font-base);
+    color: var(--text);
+    background: var(--surface-light);
+}
+
+select option:hover {
+    background: var(--surface-lighter);
+}
+
+select option:checked {
+    background: var(--primary);
+    color: white;
+}
+
+/* Voice dropdown with metadata indicators */
+select.voice-select {
+    min-height: 44px;
+    padding: var(--space-sm) var(--space-md);
+    font-size: var(--font-base);
+    line-height: 1.5;
+}
+
+select.voice-select option {
+    padding: var(--space-sm) var(--space-md);
+    white-space: normal;
+}
+
+/* Form row adjustments for voice selection */
+.form-row .form-group:only-child {
+    grid-column: 1 / -1;
+}
+
 .input-readonly {
     background: var(--bg);
     cursor: not-allowed;

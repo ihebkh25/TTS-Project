@@ -1,5 +1,21 @@
 /* TTS Tab Specific Styles */
 
+/* Voice selection styling */
+#ttsVoice {
+    min-height: 44px;
+    font-size: var(--font-base);
+}
+
+#ttsVoice optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+}
+
+#ttsVoice option {
+    padding: var(--space-sm) var(--space-md);
+}
+
 .custom-audio-player {
     margin-top: var(--space-xl);
     padding: var(--space-md);

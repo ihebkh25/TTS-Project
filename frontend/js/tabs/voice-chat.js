@@ -11,20 +11,33 @@ import {
 import { ttsLangToSpeechLang } from '../utils/format.js';
 import { visualizeAudioSpectrogram } from '../components/spectrogram.js';
 import { CONFIG } from '../config.js';
+import { populateVoiceSelect, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
 
 const DEFAULT_LANGUAGE = 'en_US';
 
 export function initVoiceChatTab(elements, state) {
+    const { voiceDetails = [] } = state;
     const micBtn = elements.voiceChatMicBtn;
     const micStatus = elements.voiceChatMicStatus;
     const micCanvas = elements.voiceChatMicCanvas;
     const botCanvas = elements.voiceChatBotCanvas;
     const botSpecCanvas = elements.voiceBotSpectrogram;
     const statusEl = elements.voiceChatStatus;
-    const langSelect = elements.voiceChatLanguage;
+    const voiceSelect = elements.voiceChatVoice;
     const transcriptContainer = elements.voiceTranscriptContainer;
     const transcriptText = elements.voiceTranscriptText;
     const convoLog = elements.voiceConversationLog;
+    
+    // Populate voice select when voiceDetails are available
+    function populateVoiceDropdown() {
+        if (!voiceSelect || !voiceDetails || voiceDetails.length === 0) return;
+        populateVoiceSelect(voiceSelect, voiceDetails, DEFAULT_LANGUAGE);
+    }
+    
+    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    if (voiceDetails && voiceDetails.length > 0) {
+        populateVoiceDropdown();
+    }
     
     if (!micBtn || !micCanvas || !botCanvas) {
         console.warn('[VoiceChat] Missing UI elements');
@@ -61,6 +74,7 @@ export function initVoiceChatTab(elements, state) {
         speechRecognition: null,
         transcript: '',
         selectedLanguage: DEFAULT_LANGUAGE,
+        selectedVoice: null, // Full voice key (e.g., "en_US:norman")
         botAudioContext: null,
         botAnalyser: null,
         botDataArray: null,
@@ -75,6 +89,53 @@ export function initVoiceChatTab(elements, state) {
             fullText: ''
         }
     };
+    
+    // Update selected language and voice when voice select changes
+    if (voiceSelect) {
+        voiceSelect.addEventListener('change', () => {
+            const voiceKey = voiceSelect.value;
+            if (voiceKey) {
+                const { lang, voice } = parseVoiceKey(voiceKey);
+                stateVoice.selectedLanguage = lang;
+                stateVoice.selectedVoice = voiceKey;
+                if (stateVoice.isRecording) {
+                    if (stateVoice.speechRecognition) {
+                        try { stateVoice.speechRecognition.stop(); } catch {}
+                        stateVoice.speechRecognition = null;
+                        // Restart with new language
+                        const sr = createSpeechRecognition();
+                        if (sr) {
+                            sr.lang = ttsLangToSpeechLang(stateVoice.selectedLanguage);
+                            sr.onresult = (e) => {
+                                let final = '';
+                                let interim = '';
+                                for (let i = e.resultIndex; i < e.results.length; i++) {
+                                    const transcript = e.results[i][0].transcript;
+                                    if (e.results[i].isFinal) {
+                                        final += transcript + ' ';
+                                    } else {
+                                        interim += transcript;
+                                    }
+                                }
+                                stateVoice.transcript = (final + interim).trim();
+                            };
+                            sr.onerror = (e) => {
+                                console.warn('[VoiceChat] SR error:', e.error);
+                            };
+                            sr.onend = () => {
+                                if (stateVoice.isRecording) {
+                                    sr.start();
+                                }
+                            };
+                            stateVoice.speechRecognition = sr;
+                            sr.start();
+                        }
+                    }
+                }
+                showToast('info', `Voice Mode voice: ${voiceSelect.options[voiceSelect.selectedIndex].text}`);
+            }
+        });
+    }
     function normalizeReplyText(text) {
         if (!text) return '';
         let t = text;
@@ -237,7 +298,23 @@ export function initVoiceChatTab(elements, state) {
     
     async function startRecording() {
         if (stateVoice.isRecording) return;
-        stateVoice.selectedLanguage = (langSelect?.value || DEFAULT_LANGUAGE);
+        // Get selected voice or use default
+        const voiceKey = voiceSelect?.value;
+        if (voiceKey) {
+            const { lang, voice } = parseVoiceKey(voiceKey);
+            stateVoice.selectedLanguage = lang;
+            stateVoice.selectedVoice = voiceKey;
+        } else {
+            // Fallback: find default voice for default language
+            const defaultVoice = getDefaultVoiceForLanguage(DEFAULT_LANGUAGE, voiceDetails);
+            if (defaultVoice) {
+                stateVoice.selectedLanguage = DEFAULT_LANGUAGE;
+                stateVoice.selectedVoice = defaultVoice.key;
+            } else {
+                stateVoice.selectedLanguage = DEFAULT_LANGUAGE;
+                stateVoice.selectedVoice = null;
+            }
+        }
         try {
             const stream = await requestMicrophoneAccess({
                 onError: (err) => {
@@ -341,7 +418,9 @@ export function initVoiceChatTab(elements, state) {
             const langName = langNames[stateVoice.selectedLanguage] || stateVoice.selectedLanguage;
             const instruction = `Please respond strictly in ${langName} only.`;
             const guidedText = `${instruction}\n${text}`;
-            const data = await sendVoiceChatMessage(guidedText, stateVoice.selectedLanguage, state.currentConversationId);
+            // Parse voice to get just the voice ID (not the full key)
+            const voiceId = stateVoice.selectedVoice ? parseVoiceKey(stateVoice.selectedVoice).voice : null;
+            const data = await sendVoiceChatMessage(guidedText, stateVoice.selectedLanguage, state.currentConversationId, voiceId);
             if (state.setCurrentConversationId) {
                 state.setCurrentConversationId(data.conversation_id);
             } else {
@@ -353,7 +432,9 @@ export function initVoiceChatTab(elements, state) {
             // If available, re-synthesize with filtered text for smoother speech
             let audioBase64 = null;
             try {
-                const ttsData = await generateTTS(filteredReply || replyText, stateVoice.selectedLanguage);
+                // Parse voice to get just the voice ID (not the full key)
+                const voiceId = stateVoice.selectedVoice ? parseVoiceKey(stateVoice.selectedVoice).voice : null;
+                const ttsData = await generateTTS(filteredReply || replyText, stateVoice.selectedLanguage, null, voiceId);
                 audioBase64 = ttsData?.audio_base64 || null;
             } catch (e) {
                 console.warn('[VoiceChat] Fallback to server audio due to TTS error:', e);
@@ -477,49 +558,12 @@ export function initVoiceChatTab(elements, state) {
         }
     }
 
-    // Adapt language on selector change
-    if (langSelect) {
-        langSelect.addEventListener('change', () => {
-            stateVoice.selectedLanguage = langSelect.value || DEFAULT_LANGUAGE;
-            // If currently recording, restart speech recognition with new lang
-            if (stateVoice.isRecording) {
-                if (stateVoice.speechRecognition) {
-                    try { stateVoice.speechRecognition.stop(); } catch {}
-                }
-                if (isSpeechRecognitionSupported()) {
-                    const sr = createSpeechRecognition({
-                        continuous: true,
-                        interimResults: true,
-                        lang: ttsLangToSpeechLang(stateVoice.selectedLanguage)
-                    });
-                    sr.onresult = (e) => {
-                        let interim = '';
-                        let final = '';
-                        for (let i = e.resultIndex; i < e.results.length; i++) {
-                            const t = e.results[i][0].transcript;
-                            if (e.results[i].isFinal) final += t + ' ';
-                            else interim += t;
-                        }
-                        stateVoice.transcript = (final + interim).trim();
-                        updateTranscriptUI(interim);
-                    };
-                    sr.onerror = () => {};
-                    sr.onend = () => {
-                        if (stateVoice.isRecording) {
-                            try { sr.start(); } catch {}
-                        }
-                    };
-                    stateVoice.speechRecognition = sr;
-                    try { sr.start(); } catch {}
-                }
-                showToast('info', `Voice Mode language: ${stateVoice.selectedLanguage}`);
-            }
-        });
-    }
+    // Voice select change handler is already set up above (lines 94-138)
     
     micBtn.addEventListener('click', onMicClick);
     
     return {
+        populateVoiceDropdown,
         cleanup: () => {
             window.removeEventListener('resize', resizeCanvases);
             if (stateVoice.isRecording) stopRecording();

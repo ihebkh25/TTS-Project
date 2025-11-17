@@ -1,5 +1,21 @@
 /* Streaming Tab Specific Styles */
 
+/* Voice selection styling */
+#streamVoice {
+    min-height: 44px;
+    font-size: var(--font-base);
+}
+
+#streamVoice optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+}
+
+#streamVoice option {
+    padding: var(--space-sm) var(--space-md);
+}
+
 /* Streaming progress bar (during connection/streaming) */
 .progress-bar {
     width: 100%;

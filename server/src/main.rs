@@ -40,6 +40,7 @@ pub struct TtsRequest {
     text: String,
     language: Option<String>,
     speaker: Option<i64>,
+    voice: Option<String>, // voice ID (e.g., "norman", "thorsten")
 }
 
 #[derive(Serialize)]
@@ -54,6 +55,12 @@ pub struct VoiceInfo {
     key: String,
     config: String,
     speaker: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quality: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -323,13 +330,37 @@ pub async fn list_voices(State(state): State<AppState>) -> Json<Vec<String>> {
 
 pub async fn list_voices_detail(State(state): State<AppState>) -> Json<Vec<VoiceInfo>> {
     let mut out = Vec::new();
-    for (k, (cfg, spk)) in state.tts.map_iter() {
-        out.push(VoiceInfo {
-            key: k.clone(),
-            config: cfg.clone(),
-            speaker: *spk,
-        });
+    
+    // Add voices from new format (multiple voices per language)
+    for lang in state.tts.list_languages() {
+        let voices = state.tts.list_voices_for_language(&lang);
+        for (voice_id, voice_entry) in voices {
+            out.push(VoiceInfo {
+                key: format!("{}:{}", lang, voice_id),
+                config: voice_entry.config.clone(),
+                speaker: voice_entry.speaker_id,
+                display_name: voice_entry.display_name.clone(),
+                gender: voice_entry.gender.clone(),
+                quality: voice_entry.quality.clone(),
+            });
+        }
     }
+    
+    // Add legacy format voices (for backwards compatibility)
+    for (k, (cfg, spk)) in state.tts.map_iter() {
+        // Skip if already added from new format
+        if !out.iter().any(|v| v.key.starts_with(&format!("{}:", k))) {
+            out.push(VoiceInfo {
+                key: k.clone(),
+                config: cfg.clone(),
+                speaker: *spk,
+                display_name: None,
+                gender: None,
+                quality: None,
+            });
+        }
+    }
+    
     Json(out)
 }
 
@@ -342,7 +373,7 @@ pub async fn tts_endpoint(
 
     let (samples, sample_rate) = state
         .tts
-        .synthesize_with_sample_rate(&req.text, req.language.as_deref(), req.speaker)
+        .synthesize_with_sample_rate(&req.text, req.language.as_deref(), req.speaker, req.voice.as_deref())
         .map_err(ApiError::TtsError)?;
 
     let sample_rate_f32 = sample_rate as f32;
@@ -440,7 +471,7 @@ pub async fn chat_endpoint(
         let reply_for_tts = reply;
         tokio::spawn(async move {
             let _ = tokio::task::spawn_blocking(move || {
-                if let Ok((samples, sr)) = tts_state.synthesize_with_sample_rate(&reply_for_tts, Some(&lang), None) {
+                if let Ok((samples, sr)) = tts_state.synthesize_with_sample_rate(&reply_for_tts, Some(&lang), None, None) {
                     let _ = tts_core::TtsManager::encode_wav_base64(&samples, sr);
                     // Audio generated in background - frontend can request via /tts if needed
                 }
@@ -456,6 +487,7 @@ pub struct VoiceChatRequest {
     message: String,
     conversation_id: Option<String>,
     language: Option<String>,
+    voice: Option<String>, // voice ID (e.g., "norman", "thorsten")
 }
 
 #[derive(Serialize)]
@@ -536,9 +568,10 @@ pub async fn voice_chat_endpoint(
     let cleaned_reply = clean_text_for_tts(&reply);
     
     // Generate TTS audio (required for voice chat)
+    let voice_id = req.voice.as_deref();
     let (samples, sample_rate) = state
         .tts
-        .synthesize_with_sample_rate(&cleaned_reply, Some(&language), None)
+        .synthesize_with_sample_rate(&cleaned_reply, Some(&language), None, voice_id)
         .map_err(ApiError::TtsError)?;
 
     let sample_rate_f32 = sample_rate as f32;
@@ -561,7 +594,9 @@ pub async fn stream_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path((lang, text)): Path<(String, String)>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let voice = params.get("voice").cloned();
     if let Err(e) = validate_tts_request(&text, Some(&lang)) {
         return ws.on_upgrade(move |mut socket| async move {
             use axum::extract::ws::Message;
@@ -582,8 +617,11 @@ pub async fn stream_ws(
             }).to_string().into()
         )).await;
         
+        // Get voice parameter
+        let voice_id = voice.as_deref();
+        
         // Get sample rate first
-        let sample_rate = match state.tts.config_for(Some(&lang)) {
+        let sample_rate = match state.tts.config_for(Some(&lang), voice_id) {
             Ok((cfg_path, _)) => state.tts.get_sample_rate(&cfg_path).unwrap_or(22050) as f32,
             Err(_) => 22_050.0f32,
         };
@@ -593,7 +631,7 @@ pub async fn stream_ws(
         let n_mels = 80usize;
         
         // Get config path
-        let (cfg_path, _) = match state.tts.config_for(Some(&lang)) {
+        let (cfg_path, _) = match state.tts.config_for(Some(&lang), voice_id) {
             Ok(cfg) => cfg,
             Err(e) => {
                 let err_msg = serde_json::json!({ "error": format!("Config error: {e}"), "code": 500 });
@@ -985,7 +1023,7 @@ pub async fn chat_stream_ws(
                                 pending_tts_tasks += 1;
                                 tokio::spawn(async move {
                                     let (samples, sample_rate) = match tokio::task::spawn_blocking(move || {
-                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts, Some(&lang_clone), None)
+                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts, Some(&lang_clone), None, None)
                                     }).await {
                                         Ok(Ok(result)) => result,
                                         Ok(Err(e)) => {
@@ -1029,7 +1067,7 @@ pub async fn chat_stream_ws(
                                 
                                 tokio::spawn(async move {
                                     match tokio::task::spawn_blocking(move || {
-                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts, Some(&lang_final), None)
+                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts, Some(&lang_final), None, None)
                                     }).await {
                                         Ok(Ok((samples, sample_rate))) => {
                                             match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {

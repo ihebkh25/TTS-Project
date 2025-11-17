@@ -7,7 +7,7 @@ import { showToast } from '../utils/toast.js';
 import { base64ToBlob } from '../utils/audio.js';
 import { setupAudioPlayer } from '../components/audioPlayer.js';
 import { visualizeAudioSpectrogram } from '../components/spectrogram.js';
-import { populateSpeakerSelect } from '../utils/voices.js';
+import { populateVoiceSelect, parseVoiceKey } from '../utils/voices.js';
 
 /**
  * Initialize TTS tab
@@ -18,20 +18,15 @@ import { populateSpeakerSelect } from '../utils/voices.js';
 export function initTtsTab(elements, state) {
     const { setCurrentAudioBlob, voiceDetails = [] } = state;
     
-    // Handle language change to populate speaker select
-    function handleLanguageChange() {
-        if (!elements.ttsLanguage || !elements.speakerGroup) return;
-        
-        const language = elements.ttsLanguage.value;
-        const voiceDetail = voiceDetails.find(v => v.key === language);
-        
-        if (voiceDetail && voiceDetail.speaker !== null) {
-            // Show speaker selection if available
-            populateSpeakerSelect(elements.ttsSpeaker, language, voiceDetails);
-            elements.speakerGroup.style.display = 'block';
-        } else {
-            elements.speakerGroup.style.display = 'none';
-        }
+    // Populate voice select when voiceDetails are available
+    function populateVoiceDropdown() {
+        if (!elements.ttsVoice || !voiceDetails || voiceDetails.length === 0) return;
+        populateVoiceSelect(elements.ttsVoice, voiceDetails);
+    }
+    
+    // Populate voice dropdown on initialization if voiceDetails are already loaded
+    if (voiceDetails && voiceDetails.length > 0) {
+        populateVoiceDropdown();
     }
     
     // Set up character counter
@@ -49,21 +44,23 @@ export function initTtsTab(elements, state) {
     async function handleTtsSubmit(e) {
         e.preventDefault();
         
-        if (!elements.ttsText || !elements.ttsLanguage) return;
+        if (!elements.ttsText || !elements.ttsVoice) return;
         
         const text = elements.ttsText.value.trim();
-        const language = elements.ttsLanguage.value;
-        const speaker = elements.ttsSpeaker?.value ? parseInt(elements.ttsSpeaker.value) : null;
+        const voiceKey = elements.ttsVoice.value;
         
         if (!text) {
             showStatus(elements.ttsStatus, 'error', 'Please enter some text to synthesize');
             return;
         }
         
-        if (!language) {
-            showStatus(elements.ttsStatus, 'error', 'Please select a language');
+        if (!voiceKey) {
+            showStatus(elements.ttsStatus, 'error', 'Please select a voice');
             return;
         }
+        
+        // Parse voice key to get language and voice
+        const { lang: language, voice } = parseVoiceKey(voiceKey);
         
         setButtonState(elements.ttsBtn, true, 'Generating...');
         showStatus(elements.ttsStatus, 'info', 'Generating speech...');
@@ -72,8 +69,8 @@ export function initTtsTab(elements, state) {
         if (elements.ttsSpectrogram) elements.ttsSpectrogram.classList.add('hidden');
         
         try {
-            console.log('[TTS] Generating speech:', { text: text.substring(0, 50) + '...', language, speaker });
-            const data = await generateTTS(text, language, speaker);
+            console.log('[TTS] Generating speech:', { text: text.substring(0, 50) + '...', language, voice, voiceKey });
+            const data = await generateTTS(text, language, null, voice);
             console.log('[TTS] Response received:', { 
                 hasAudio: !!data.audio_base64, 
                 audioLength: data.audio_base64?.length || 0,
@@ -184,20 +181,16 @@ export function initTtsTab(elements, state) {
         if (elements.ttsForm) {
             elements.ttsForm.addEventListener('submit', handleTtsSubmit);
         }
-        
-        // Language change handler for speaker selection
-        if (elements.ttsLanguage) {
-            elements.ttsLanguage.addEventListener('change', handleLanguageChange);
-        }
     }
     
     // Initialize
     setupCharacterCounter();
     setupEventListeners();
     
+    // Return public API
     return {
         handleTtsSubmit,
-        handleLanguageChange,
+        populateVoiceDropdown,
         setupCharacterCounter
     };
 }

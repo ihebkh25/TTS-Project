@@ -115,9 +115,15 @@ async function init() {
                 const voiceState = {
                     get currentConversationId() { return currentConversationId; },
                     set currentConversationId(value) { currentConversationId = value; },
-                    setCurrentConversationId
+                    setCurrentConversationId,
+                    voiceDetails
                 };
-                initVoiceChatTab(elements, voiceState);
+                const voiceChatTab = initVoiceChatTab(elements, voiceState);
+                // Populate voice dropdown for voice-chat tab
+                if (voiceChatTab && voiceChatTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    voiceChatTab.populateVoiceDropdown();
+                }
+                // Populate language selects for other tabs
                 populateVoicesInSelects();
                 initializedTabs.add(tabName);
             }
@@ -137,9 +143,13 @@ async function init() {
                     setCurrentAudioBlob,
                     voiceDetails
                 };
-                initTtsTab(elements, ttsState);
+                const ttsTab = initTtsTab(elements, ttsState);
                 setupCustomAudioPlayer(elements);
-                // Populate voices for this tab
+                // Populate voice dropdown for TTS tab
+                if (ttsTab && ttsTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    ttsTab.populateVoiceDropdown();
+                }
+                // Populate language selects for other tabs
                 populateVoicesInSelects();
                 initializedTabs.add(tabName);
             }
@@ -150,10 +160,15 @@ async function init() {
                     set isStreaming(value) { isStreaming = value; },
                     get currentWebSocket() { return currentWebSocket; },
                     set currentWebSocket(value) { currentWebSocket = value; },
-                    setCurrentStreamAudioBlob
+                    setCurrentStreamAudioBlob,
+                    voiceDetails
                 };
-                initStreamTab(elements, streamState);
-                // Populate voices for this tab
+                const streamTab = initStreamTab(elements, streamState);
+                // Populate voice dropdown for stream tab
+                if (streamTab && streamTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    streamTab.populateVoiceDropdown();
+                }
+                // Populate language selects for other tabs
                 populateVoicesInSelects();
                 initializedTabs.add(tabName);
             }
@@ -182,7 +197,11 @@ async function init() {
             setCurrentAudioBlob,
             voiceDetails
         };
-        initTtsTab(elements, ttsState);
+        const ttsTab = initTtsTab(elements, ttsState);
+        // Populate voice dropdown if voiceDetails are available
+        if (ttsTab && ttsTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+            ttsTab.populateVoiceDropdown();
+        }
         
         updateLoadingStatus('Setting up handlers...');
         // Set up download button handlers

@@ -81,6 +81,17 @@ section.tab-content.active[data-tab="voice-chat"] {
     border: 1px solid var(--border-lighter);
     border-radius: var(--radius);
     color: var(--text);
+    min-height: 44px;
+}
+
+.voice-chat-settings select optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+}
+
+.voice-chat-settings select option {
+    padding: var(--space-sm) var(--space-md);
 }
 
 .voice-chat-main {

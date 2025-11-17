@@ -69,7 +69,6 @@ pub async fn create_test_app() -> Router {
     #[derive(serde::Serialize)]
     struct TtsResponse {
         audio_base64: String,
-        spectrogram_base64: String,
         duration_ms: u64,
         sample_rate: u32,
     }
@@ -113,7 +112,6 @@ pub async fn create_test_app() -> Router {
                         // For tests, return a mock response
                         Ok(Json(TtsResponse {
                             audio_base64: "mock_audio".to_string(),
-                            spectrogram_base64: "mock_spectrogram".to_string(),
                             duration_ms: 1000,
                             sample_rate: 22050,
                         }))
@@ -129,7 +127,7 @@ pub async fn create_test_app() -> Router {
             }
         }))
         .route("/chat", post({
-            move |State(s): State<AppState>, Json(req): Json<ChatRequest>| async move {
+            move |State(_s): State<AppState>, Json(req): Json<ChatRequest>| async move {
                 match validate_chat_request(&req.message) {
                     Ok(_) => {
                         if let Some(ref conv_id) = req.conversation_id {

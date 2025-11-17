@@ -135,7 +135,7 @@ impl TtsManager {
     }
 
     /// Get or create a cached synthesizer for a config path
-    fn get_or_create_synth<P: AsRef<Path>>(
+    pub fn get_or_create_synth<P: AsRef<Path>>(
         &self,
         cfg_path: P,
     ) -> anyhow::Result<(Arc<Mutex<PiperSpeechSynthesizer>>, u32)> {

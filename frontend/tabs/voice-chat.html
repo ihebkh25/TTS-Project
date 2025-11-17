@@ -1,0 +1,41 @@
+<!-- Voice Chat (Voice Mode) -->
+<section class="tab-content" id="voiceChatSection" data-tab="voice-chat">
+    <div class="voice-chat-container">
+        <div class="voice-chat-settings">
+            <div class="form-group">
+                <label for="voiceChatLanguage">Language</label>
+                <select id="voiceChatLanguage">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+        </div>
+        <div class="voice-chat-main">
+            <div id="voiceConversationLog" class="voice-conversation-log" aria-live="polite" aria-atomic="false" style="width:100%;max-width:700px;margin:0 auto;display:flex;flex-direction:column;gap:0.75rem;">
+            </div>
+            <div class="mic-container">
+                <canvas id="voiceMicCanvas" class="frequency-canvas" aria-hidden="true"></canvas>
+                <button id="voiceChatMicBtn" class="mic-button" aria-label="Start recording" title="Start recording">
+                    <svg class="mic-icon-large" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                </button>
+                <div id="voiceChatMicStatus" class="mic-status">Click to start</div>
+            </div>
+            <div class="bot-audio-container">
+                <canvas id="voiceResponseCanvas" class="frequency-canvas" aria-hidden="true"></canvas>
+                <canvas id="voiceBotSpectrogram" class="frequency-canvas" aria-hidden="true" style="opacity:0.85;"></canvas>
+                <div class="bot-status">Assistant</div>
+            </div>
+            <div class="voice-transcript-container" id="voiceTranscriptContainer">
+                <div class="voice-transcript-label">Transcript</div>
+                <div class="voice-transcript-text" id="voiceTranscriptText"></div>
+            </div>
+            <div id="voiceChatStatus"></div>
+        </div>
+    </div>
+</section>
+
+

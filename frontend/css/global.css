@@ -76,6 +76,8 @@ body {
     padding: var(--space-xl) var(--space-md);
     border-right: 1px solid var(--border);
     flex-shrink: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable; /* Reserve space for scrollbar to prevent layout shifts */
 }
 
 .logo {
@@ -126,19 +128,38 @@ body {
     width: 100%;
     padding-bottom: var(--space-xl);
     direction: ltr; /* Keep scrollbar on right */
+    scrollbar-gutter: stable; /* Reserve space for scrollbar to prevent layout shifts */
 }
 
+/* Chat tab special layout - full height */
 .main-content:has(#chatSection.active) {
     padding: 0;
     overflow: hidden;
     height: 100%;
     display: flex;
     flex-direction: column;
+    max-width: 100%;
+    min-height: 0; /* Important for flex children */
 }
 
 .main-content:has(#chatSection.active) .header {
     padding: var(--space-xl) var(--space-3xl) var(--space-lg);
     margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+/* Ensure tab content container fills remaining space for chat */
+.main-content:has(#chatSection.active) #tabContentContainer {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Chat section should not have padding when active (handled by main-content) */
+.main-content:has(#chatSection.active) #chatSection {
+    padding: 0;
 }
 
 /* Custom Scrollbar - Right Positioned */
@@ -155,9 +176,29 @@ body {
     background: var(--border-light);
     border-radius: 4px;
     border: 1px solid var(--border);
+    transition: background 0.2s ease;
 }
 
 .main-content::-webkit-scrollbar-thumb:hover {
+    background: var(--border-lighter);
+}
+
+/* Sidebar scrollbar */
+.sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 3px;
+    transition: background 0.2s ease;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
     background: var(--border-lighter);
 }
 
@@ -167,10 +208,16 @@ body {
     scrollbar-color: var(--border-light) var(--bg);
 }
 
+.sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-light) transparent;
+}
+
 .header {
     margin-bottom: var(--space-3xl);
     padding-bottom: var(--space-lg);
     border-bottom: 1px solid var(--surface-lighter);
+    position: relative;
 }
 
 .header h1 {
@@ -232,16 +279,28 @@ body {
 /* Tabs */
 .tab-content {
     display: none;
-    opacity: 0;
-    transform: translateY(10px);
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    /* Padding is handled by main-content, but we ensure consistent spacing */
+    box-sizing: border-box;
 }
 
 .tab-content.active {
     display: block !important;
-    opacity: 1;
-    transform: translateY(0);
 }
+
+/* Ensure only one tab is visible at a time */
+.tab-content:not(.active) {
+    display: none !important;
+}
+
+/* Consistent heading styles in tabs */
+.tab-content h2 {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-2xl);
+    color: var(--text);
+    margin-top: 0;
+}
+
 
 /* Form Elements */
 .form-group {
@@ -349,6 +408,44 @@ select {
     width: 100%;
 }
 
+.btn-secondary.streaming-active {
+    background: var(--primary);
+    color: rgba(255, 255, 255, 0.9);
+    position: relative;
+    animation: pulse-streaming 2s ease-in-out infinite;
+}
+
+.btn-secondary.streaming-active::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    background: #ef4444;
+    border-radius: 50%;
+    animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes pulse-streaming {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+    }
+}
+
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
+}
+
 .btn-secondary {
     background: var(--surface-light);
     border-color: var(--border-light);
@@ -395,6 +492,20 @@ select {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: var(--space-xs);
     margin-top: var(--space-md);
+}
+
+/* Server tab button group - fixed width to prevent size changes */
+#serverSection .button-group {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-xs);
+}
+
+#serverSection .button-group .btn {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: center;
 }
 
 /* Status */
@@ -522,12 +633,19 @@ select {
 
     .logo {
         font-size: var(--font-base);
+        margin-bottom: var(--space-lg);
     }
 
     .tab-btn {
         font-size: 0.8rem;
         text-align: center;
         padding: var(--space-xs);
+        position: relative;
+    }
+    
+    .tab-btn.active::before {
+        width: 2px;
+        height: 50%;
     }
 
     .main-content {
@@ -554,6 +672,16 @@ select {
     .button-group {
         grid-template-columns: 1fr;
     }
+    
+    /* Server tab buttons - single column on mobile, maintain equal width */
+    #serverSection .button-group {
+        grid-template-columns: 1fr;
+    }
+    
+    #serverSection .button-group .btn {
+        width: 100%;
+        min-width: 0;
+    }
 
     .toast-container {
         left: var(--space-md);
@@ -570,4 +698,17 @@ select {
     .main-content:has(#chatSection.active) .header {
         padding: var(--space-md) var(--space-md) var(--space-lg);
     }
+}
+
+/* Screen reader only - visually hidden but accessible to assistive technologies */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
 }

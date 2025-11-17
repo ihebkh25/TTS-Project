@@ -1,10 +1,11 @@
 /* Streaming Tab Specific Styles */
 
+/* Streaming progress bar (during connection/streaming) */
 .progress-bar {
     width: 100%;
-    height: 8px;
-    background: var(--surface-light);
-    border-radius: 4px;
+    height: 4px;
+    background: var(--surface);
+    border-radius: 2px;
     margin-top: var(--space-md);
     overflow: hidden;
 }
@@ -14,26 +15,45 @@
     background: var(--text);
     width: 0%;
     transition: width 0.3s ease;
-    border-radius: 4px;
+    border-radius: 2px;
 }
 
-.spectrogram-container {
+/* Streaming Metrics Display */
+.stream-metrics {
     margin-top: var(--space-md);
-}
-
-.spectrogram-wrapper {
-    margin-top: var(--space-md);
-}
-
-.spectrogram-wrapper h4 {
-    font-size: var(--font-sm);
-    color: var(--text-muted);
-    margin-bottom: var(--space-xs);
-}
-
-.spectrogram-image {
-    max-width: 100%;
+    padding: var(--space-sm);
+    background: var(--surface-light);
+    border: 1px solid var(--border-lighter);
     border-radius: var(--radius);
-    border: 1px solid var(--surface-lighter);
 }
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-sm);
+}
+
+.metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-value {
+    font-size: 0.875rem;
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Custom audio player styles are shared with TTS tab via tts.css */
+/* Additional streaming-specific styles can be added here if needed */
 

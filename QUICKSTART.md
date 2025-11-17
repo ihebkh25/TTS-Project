@@ -137,5 +137,10 @@ curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"
 export PIPER_ESPEAKNG_DATA_DIRECTORY=/usr/share
 ```
 
-See [README.md](README.md) for full API documentation.
+## Next Steps
+
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Architecture](docs/ARCHITECTURE.md)** - System design
+- **[Deployment](docs/DEPLOYMENT.md)** - Production deployment
+- **[Testing](tests/README.md)** - Test suite guide
 

@@ -6,12 +6,21 @@ This directory contains comprehensive tests for the TTS project.
 
 ```
 tests/
-├── README.md              # This file
-├── run_tests.sh           # Test runner script
-├── integration.rs         # Integration test entry point
-├── integration/           # Integration tests
-│   ├── api_tests.rs       # API endpoint tests
-│   └── common.rs         # Test utilities
+├── README.md                    # This file
+├── run_tests.sh                 # Test runner script
+├── test_streaming.js            # WebSocket streaming test (manual)
+└── postman/                     # Postman collection
+    ├── README.md
+    └── TTS_API.postman_collection.json
+
+server/tests/
+├── integration.rs               # Integration test entry point
+├── common.rs                    # Integration test utilities
+├── e2e.rs                       # End-to-end test entry point
+├── e2e_tts_pipeline.rs         # E2E TTS pipeline tests
+├── e2e_chat_pipeline.rs        # E2E chat pipeline tests
+├── e2e_websocket_streaming.rs  # E2E WebSocket tests
+└── e2e_test_helpers.rs         # E2E test utilities
 ```
 
 **Note:** Unit tests are located in their respective crate modules:
@@ -54,9 +63,18 @@ tests/
 
 | Category | Status | Coverage |
 |----------|--------|----------|
-| TTS Pipeline | ⏳ Pending | 0% |
-| Chat Pipeline | ⏳ Pending | 0% |
-| WebSocket Streaming | ⏳ Pending | 0% |
+| TTS Pipeline | ✅ Implemented | ~80% |
+| Chat Pipeline | ✅ Implemented | ~70% |
+| WebSocket Streaming | ⏳ Manual Testing | 0% |
+
+**Current E2E Tests:**
+- ✅ Complete TTS pipeline (text → audio)
+- ✅ TTS with speaker selection
+- ✅ TTS with multiple languages
+- ✅ Complete chat pipeline (message → LLM → audio)
+- ✅ Chat conversation continuity
+- ✅ Chat with TTS audio generation
+- ✅ Voice chat endpoint
 
 ## 🚀 Running Tests
 
@@ -86,10 +104,33 @@ cargo test --package server --lib
 
 ```bash
 # Run integration tests only
-cargo test --test integration
+cargo test --package server --test integration
 
 # Run with output
-cargo test --test integration -- --nocapture
+cargo test --package server --test integration -- --nocapture
+```
+
+### End-to-End Tests
+
+```bash
+# Run e2e tests only
+cargo test --package server --test e2e
+
+# Run with output
+cargo test --package server --test e2e -- --nocapture
+
+# Run specific e2e test
+cargo test --package server --test e2e test_complete_tts_pipeline
+```
+
+### Manual WebSocket Testing
+
+```bash
+# Test WebSocket streaming (requires running server)
+node tests/test_streaming.js "Hello, world!" en_US
+
+# Or with conversation ID
+node tests/test_streaming.js "Hello" en_US "conversation-uuid"
 ```
 
 ### Advanced Options
@@ -179,8 +220,9 @@ If you encounter package name errors:
 - [ ] Authentication tests (if added)
 
 **End-to-End Tests:**
-- [ ] Complete TTS pipeline
-- [ ] Complete chat pipeline
+- [x] Complete TTS pipeline
+- [x] Complete chat pipeline
+- [ ] WebSocket streaming (automated tests)
 - [ ] Frontend integration tests
 
 #### 2. Test Infrastructure Improvements

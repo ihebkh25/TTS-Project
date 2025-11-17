@@ -1,0 +1,100 @@
+<!-- Streaming Section -->
+<section class="tab-content" id="streamSection" data-tab="stream">
+    <h2>Real-time Streaming</h2>
+    <form id="streamForm">
+        <div class="form-group">
+            <label for="streamText">Text to Stream</label>
+            <textarea id="streamText" name="text" placeholder="Enter text for real-time streaming..." required rows="4">Hello World, this is streaming audio!</textarea>
+            <div class="char-count"><span id="streamCharCount">0</span> characters</div>
+        </div>
+        <div class="form-group">
+            <label for="streamLanguage">Language</label>
+            <select id="streamLanguage" name="language" required>
+                <option value="">Loading voices...</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary" id="streamBtn">
+            <span class="btn-text">Start Streaming</span>
+            <span class="btn-spinner hidden"></span>
+        </button>
+    </form>
+    <div id="streamStatus" class="status-container"></div>
+    <div id="streamProgress" class="progress-bar hidden">
+        <div class="progress-fill"></div>
+    </div>
+    <div id="streamMetrics" class="stream-metrics hidden">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label">Progress:</span>
+                <span class="metric-value" id="streamProgressPercent">0%</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Chunks:</span>
+                <span class="metric-value" id="streamChunks">0 / 0</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Speed:</span>
+                <span class="metric-value" id="streamChunksPerSec">0 chunks/s</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Time:</span>
+                <span class="metric-value" id="streamTime">0.0s / 0.0s</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Remaining:</span>
+                <span class="metric-value" id="streamTimeRemaining">-</span>
+            </div>
+        </div>
+    </div>
+    <div id="streamAudioPlayer" class="custom-audio-player hidden">
+        <div class="audio-player-header">
+            <h3 class="audio-player-title">Streamed Audio</h3>
+        </div>
+        <div class="audio-player-main">
+            <div class="audio-controls-section">
+                <div class="audio-player-controls">
+                    <button class="audio-btn play-pause-btn" id="streamPlayPause" aria-label="Play/Pause">
+                        <svg class="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        <svg class="pause-icon hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
+                    </button>
+                    <div class="audio-time">
+                        <span class="current-time" id="streamCurrentTime">0:00</span>
+                        <span class="time-separator">/</span>
+                        <span class="duration" id="streamDuration">0:00</span>
+                    </div>
+                    <div class="audio-speed-control">
+                        <label for="streamSpeed" class="audio-speed-label" title="Playback Speed">Speed:</label>
+                        <select id="streamSpeed" class="audio-speed-select">
+                            <option value="0.5">0.5x</option>
+                            <option value="0.75">0.75x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="1.75">1.75x</option>
+                            <option value="2">2x</option>
+                        </select>
+                    </div>
+                    <button class="audio-btn download-btn" id="streamDownloadBtn" aria-label="Download">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                </div>
+                <div class="audio-progress-container">
+                    <input type="range" class="audio-progress" id="streamProgressSlider" min="0" max="100" value="0" step="0.1">
+                </div>
+                <div class="audio-waveform-container">
+                    <canvas id="streamWaveform" class="audio-waveform"></canvas>
+                </div>
+            </div>
+            <div id="streamSpectrogram" class="spectrogram-section hidden">
+                <div class="spectrogram-header">
+                    <h4 class="spectrogram-title">Real-time Mel Spectrogram</h4>
+                </div>
+                <div class="spectrogram-wrapper">
+                    <canvas id="streamSpectrogramCanvas" class="spectrogram-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+        <audio id="streamAudio" class="hidden"></audio>
+    </div>
+</section>
+

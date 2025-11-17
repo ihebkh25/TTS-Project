@@ -2,6 +2,15 @@
 
 High-performance multilingual Text-to-Speech and Chat server built with Rust, featuring Piper TTS engine integration and OpenAI/Ollama LLM support.
 
+## 📚 Documentation
+
+- **[Quick Start](QUICKSTART.md)** - Get started in 5 minutes
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Architecture](docs/ARCHITECTURE.md)** - System design
+- **[Deployment](docs/DEPLOYMENT.md)** - Production deployment
+- **[Testing](tests/README.md)** - Test suite guide
+- **[Docs Index](docs/README.md)** - All documentation
+
 ## Quick Start
 
 **Docker (Recommended):**
@@ -49,9 +58,15 @@ Rust workspace with three crates:
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
 | `GET` | `/voices` | List available languages |
+| `GET` | `/voices/detail` | Detailed voice info |
 | `POST` | `/tts` | Synthesize speech |
 | `POST` | `/chat` | Chat with LLM |
-| `GET` | `/stream/:lang/:text` | WebSocket audio streaming |
+| `POST` | `/voice-chat` | Chat with audio response |
+| `WS` | `/stream/{lang}/{text}` | WebSocket TTS streaming |
+| `WS` | `/ws/chat/stream` | WebSocket chat streaming |
+| `GET` | `/metrics` | Server metrics |
+
+See [API Reference](docs/API.md) for details.
 
 ## Configuration
 
@@ -94,6 +109,9 @@ docker run -p 8082:80 tts-frontend
 
 ## Documentation
 
-- **[QUICKSTART.md](QUICKSTART.md)** - Setup guide
-- **[tests/README.md](tests/README.md)** - Testing docs
-- **[frontend/FRONTEND_GUIDE.md](frontend/docs/FRONTEND_GUIDE.md)** - Frontend setup
+- **[Quick Start](QUICKSTART.md)** - Setup guide
+- **[API Reference](docs/API.md)** - Complete API docs
+- **[Architecture](docs/ARCHITECTURE.md)** - System design
+- **[Deployment](docs/DEPLOYMENT.md)** - Production guide
+- **[Testing](tests/README.md)** - Test suite
+- **[All Docs](docs/README.md)** - Documentation index

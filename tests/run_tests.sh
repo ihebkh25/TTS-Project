@@ -34,5 +34,13 @@ cargo test --package server --test integration || {
 
 echo -e "${GREEN}✅ Integration tests passed${NC}"
 
+echo -e "${YELLOW}🎯 Running end-to-end tests...${NC}"
+cargo test --package server --test e2e || {
+    echo -e "${RED}❌ End-to-end tests failed${NC}"
+    exit 1
+}
+
+echo -e "${GREEN}✅ End-to-end tests passed${NC}"
+
 echo -e "${GREEN}🎉 All tests passed!${NC}"
 

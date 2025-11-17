@@ -478,13 +478,13 @@ export function initChatTab(elements, state) {
                             // Voice detected
                         },
                         onSilenceDetected: (silenceDuration, audioLevel) => {
-                            console.log('[Dictating Mode] Silence detected, pausing recording', {
+                            console.log('[Dictating Mode] Silence detected (1.5s), sending message', {
                                 silenceDuration,
                                 audioLevel,
                                 transcript: voiceModeState.transcript
                             });
-                            // Pause recording but don't send message - allow user to continue
-                            pauseRecording();
+                            // Send message after 1.5s of silence
+                            stopRecording();
                         },
                         onSilenceWarning: (silenceDuration) => {
                             // Optional: show warning
@@ -575,8 +575,8 @@ export function initChatTab(elements, state) {
                             console.error('Error restarting speech recognition:', e);
                             // If restart fails, try to recover by stopping and letting user restart
                             if (e.name === 'InvalidStateError' || e.name === 'NotAllowedError') {
-                                console.warn('[Dictating Mode] Speech recognition restart failed, pausing recording');
-                                pauseRecording();
+                                console.warn('[Dictating Mode] Speech recognition restart failed, stopping recording');
+                                stopRecording();
                             }
                         }
                     }
@@ -631,72 +631,10 @@ export function initChatTab(elements, state) {
         }
     }
     
-    // Pause recording (on silence) - don't send message, allow continuation
-    function pauseRecording() {
-        if (!voiceModeState.isRecording) return;
-        
-        voiceModeState.isRecording = false;
-        
-        // Stop speech recognition
-        if (voiceModeState.speechRecognition) {
-            try {
-                voiceModeState.speechRecognition.stop();
-            } catch (e) {
-                console.error('Error stopping speech recognition:', e);
-            }
-            voiceModeState.speechRecognition = null;
-        }
-        
-        // Stop VAD
-        if (voiceModeState.vadChecker) {
-            voiceModeState.vadChecker.stop();
-            voiceModeState.vadChecker = null;
-        }
-        
-        // Stop visualization
-        stopAudioVisualization();
-        
-        // Stop media stream
-        if (voiceModeState.mediaStream) {
-            voiceModeState.mediaStream.getTracks().forEach(track => track.stop());
-            voiceModeState.mediaStream = null;
-        }
-        
-        // Close audio context
-        if (voiceModeState.audioContext) {
-            voiceModeState.audioContext.close();
-            voiceModeState.audioContext = null;
-        }
-        
-        voiceModeState.analyser = null;
-        voiceModeState.dataArray = null;
-        
-        // Stop recording timer
-        stopRecordingTimer();
-        
-        // Update UI - show paused state but keep transcript visible
-        updateVoiceModeStatus('Paused - click microphone to continue', false);
-        
-        // Keep transcript message visible - don't remove it
-        // Update transcript message to show it's paused (but keep content)
-        if (voiceModeState.currentTranscriptMessage) {
-            const messageContent = voiceModeState.currentTranscriptMessage.querySelector('.message-content');
-            if (messageContent) {
-                messageContent.style.opacity = '0.8';
-                messageContent.style.fontStyle = 'normal';
-            }
-        }
-        
-        console.log('[Dictating Mode] Recording paused', {
-            transcript: voiceModeState.transcript.trim(),
-            accumulatedFinal: voiceModeState.accumulatedFinalTranscript.trim()
-        });
-    }
-    
-    // Stop recording (explicit stop by user) - send message
+    // Stop recording (explicit stop by user or auto-send on silence) - send message
     function stopRecording() {
         if (!voiceModeState.isRecording) {
-            // If already paused, send the accumulated message
+            // If not recording, send any accumulated message
             const finalTranscript = voiceModeState.transcript.trim() || voiceModeState.accumulatedFinalTranscript.trim();
             if (finalTranscript) {
                 console.log('[Dictating Mode] Sending accumulated message:', finalTranscript);
@@ -1080,11 +1018,11 @@ export function initChatTab(elements, state) {
     function exitVoiceMode() {
         if (!voiceModeState.isActive) return;
         
-        // Stop recording if active, or send accumulated message if paused
+        // Stop recording if active
         if (voiceModeState.isRecording) {
             stopRecording();
         } else {
-            // If paused, send accumulated message before exiting
+            // If not recording, send accumulated message before exiting
             const finalTranscript = voiceModeState.transcript.trim() || voiceModeState.accumulatedFinalTranscript.trim();
             if (finalTranscript) {
                 sendVoiceMessage(finalTranscript);
@@ -1181,7 +1119,7 @@ export function initChatTab(elements, state) {
                     // Stop and send message
                     stopRecording();
                 } else {
-                    // Resume recording (continue with existing transcript)
+                    // Start recording
                     startRecording();
                 }
             } else {

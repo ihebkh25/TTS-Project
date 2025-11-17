@@ -131,7 +131,7 @@ export const CONFIG = {
     VAD: {
         ENABLED: true,
         SILENCE_THRESHOLD: 30, // Audio level threshold (0-255)
-        SILENCE_DURATION: 1500, // Milliseconds of silence before auto-stop
+        SILENCE_DURATION: 1500, // Milliseconds of silence before auto-send (ms)
         CHECK_INTERVAL: 100, // How often to check audio levels (ms)
         MIN_RECORDING_DURATION: 500, // Minimum recording duration before VAD can trigger (ms)
     },

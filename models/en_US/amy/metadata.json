@@ -1,0 +1,9 @@
+{
+  "id": "amy",
+  "display_name": "Amy",
+  "description": "English (US) female voice, medium quality",
+  "gender": "female",
+  "quality": "medium",
+  "language": "en_US",
+  "sample_rate": 22050
+}

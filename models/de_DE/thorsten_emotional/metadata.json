@@ -1,0 +1,10 @@
+{
+  "id": "thorsten_emotional",
+  "display_name": "Thorsten Emotional",
+  "description": "German (Germany) male voice with emotional variations, medium quality. Supports multiple emotional speakers (0-7).",
+  "gender": "male",
+  "quality": "medium",
+  "language": "de_DE",
+  "note": "Supports multiple emotional speakers",
+  "sample_rate": 22050
+}

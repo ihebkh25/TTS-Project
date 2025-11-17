@@ -4,7 +4,7 @@ import { initElements } from './utils/dom.js';
 import { setupTabs } from './utils/tabs.js';
 import { populateLanguageSelects } from './utils/voices.js';
 import { showToast } from './utils/toast.js';
-import { showStatus, updateServerStatus } from './utils/dom.js';
+import { updateServerStatus } from './utils/dom.js';
 import { setupCustomAudioPlayer, downloadAudio } from './components/audioPlayer.js';
 import { scrollChatToBottom } from './components/chat.js';
 import { getVoices, getVoiceDetails, checkServerHealth } from './services/api.js';
@@ -16,8 +16,8 @@ import { initVoiceChatTab } from './tabs/voice-chat.js';
 
 // Global state
 let elements = {};
-let voices = [];
-let voiceDetails = [];
+let voices = []; // Simple language codes list (for voiceModeLanguage in chat tab)
+let voiceDetails = []; // Full voice details (for TTS, Stream, Voice-chat tabs)
 let currentAudioBlob = null;
 let currentStreamAudioBlob = null;
 let currentConversationId = null;
@@ -82,15 +82,9 @@ async function init() {
             
             // Only initialize if not already initialized
             if (initializedTabs.has(tabName)) {
-                // Still populate voices even if tab is already initialized
-                // (in case voices were loaded after tab initialization)
-                populateVoicesInSelects();
-                
-                // Re-initialize audio player for TTS tab when returning to it
-                if (tabName === 'tts') {
-                    setupCustomAudioPlayer(elements);
-                    // Resume AudioContext if it exists and is suspended
-                    resumeTtsAudioContext(elements);
+                // Populate voiceModeLanguage for chat tab if needed
+                if (tabName === 'chat') {
+                    populateVoiceModeLanguage();
                 }
                 return;
             }
@@ -103,8 +97,8 @@ async function init() {
                     setCurrentConversationId
                 };
                 initChatTab(elements, chatState);
-                // Populate voices for dictating mode language selector
-                populateVoicesInSelects();
+                // Populate voiceModeLanguage for dictating mode
+                populateVoiceModeLanguage();
                 initializedTabs.add(tabName);
                 setTimeout(() => {
                     scrollChatToBottom(elements.chatMessages);
@@ -115,10 +109,14 @@ async function init() {
                 const voiceState = {
                     get currentConversationId() { return currentConversationId; },
                     set currentConversationId(value) { currentConversationId = value; },
-                    setCurrentConversationId
+                    setCurrentConversationId,
+                    voiceDetails
                 };
-                initVoiceChatTab(elements, voiceState);
-                populateVoicesInSelects();
+                const voiceChatTab = initVoiceChatTab(elements, voiceState);
+                // Populate voice dropdown for voice-chat tab
+                if (voiceChatTab && voiceChatTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    voiceChatTab.populateVoiceDropdown();
+                }
                 initializedTabs.add(tabName);
             }
             
@@ -137,10 +135,12 @@ async function init() {
                     setCurrentAudioBlob,
                     voiceDetails
                 };
-                initTtsTab(elements, ttsState);
+                const ttsTab = initTtsTab(elements, ttsState);
                 setupCustomAudioPlayer(elements);
-                // Populate voices for this tab
-                populateVoicesInSelects();
+                // Populate voice dropdown for TTS tab
+                if (ttsTab && ttsTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    ttsTab.populateVoiceDropdown();
+                }
                 initializedTabs.add(tabName);
             }
             if (tabName === 'stream') {
@@ -150,11 +150,14 @@ async function init() {
                     set isStreaming(value) { isStreaming = value; },
                     get currentWebSocket() { return currentWebSocket; },
                     set currentWebSocket(value) { currentWebSocket = value; },
-                    setCurrentStreamAudioBlob
+                    setCurrentStreamAudioBlob,
+                    voiceDetails
                 };
-                initStreamTab(elements, streamState);
-                // Populate voices for this tab
-                populateVoicesInSelects();
+                const streamTab = initStreamTab(elements, streamState);
+                // Populate voice dropdown for stream tab
+                if (streamTab && streamTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+                    streamTab.populateVoiceDropdown();
+                }
                 initializedTabs.add(tabName);
             }
         });
@@ -171,8 +174,8 @@ async function init() {
         // Re-initialize elements after tab content is loaded
         elements = initElements();
         
-        // Populate language selects now that elements are available
-        populateVoicesInSelects();
+        // Populate voiceModeLanguage for chat tab if available
+        populateVoiceModeLanguage();
         
         // Set up custom audio player
         setupCustomAudioPlayer(elements);
@@ -182,7 +185,11 @@ async function init() {
             setCurrentAudioBlob,
             voiceDetails
         };
-        initTtsTab(elements, ttsState);
+        const ttsTab = initTtsTab(elements, ttsState);
+        // Populate voice dropdown if voiceDetails are available
+        if (ttsTab && ttsTab.populateVoiceDropdown && voiceDetails && voiceDetails.length > 0) {
+            ttsTab.populateVoiceDropdown();
+        }
         
         updateLoadingStatus('Setting up handlers...');
         // Set up download button handlers
@@ -223,27 +230,17 @@ async function init() {
     }
 }
 
-// Populate voices in select elements
-function populateVoicesInSelects() {
+// Populate voiceModeLanguage select (used only in chat tab for dictating mode)
+function populateVoiceModeLanguage() {
     if (!voices || voices.length === 0) {
-        console.warn('[Main] No voices available to populate');
-        return;
+        return; // Silently return if voices not loaded yet
     }
     
-    // Re-initialize elements to get current select elements
     const currentElements = initElements();
-    const selects = [
-        currentElements.ttsLanguage, 
-        currentElements.streamLanguage, 
-        currentElements.voiceModeLanguage,
-        currentElements.voiceChatLanguage
-    ].filter(Boolean);
+    const voiceModeLanguage = currentElements.voiceModeLanguage;
     
-    if (selects.length > 0) {
-        console.log('[Main] Populating', selects.length, 'language select(s) with', voices.length, 'voices');
-        populateLanguageSelects(selects, voices);
-    } else {
-        console.warn('[Main] No language select elements found to populate');
+    if (voiceModeLanguage) {
+        populateLanguageSelects([voiceModeLanguage], voices);
     }
 }
 
@@ -255,14 +252,9 @@ async function loadVoices() {
         // Load voice details
         voiceDetails = await getVoiceDetails();
         
-        // Note: populateLanguageSelects will be called after tabs are loaded
-        // via populateVoicesInSelects() to ensure elements exist
-        
     } catch (error) {
         console.error('Error loading voices:', error);
-        if (elements && elements.serverInfo) {
-        showStatus(elements.serverInfo, 'error', `Failed to load voices: ${error.message}`);
-        }
+        showToast('error', `Failed to load voices: ${error.message}`);
     }
 }
 
@@ -274,13 +266,12 @@ function setupDownloadHandlers() {
             try {
                 if (currentAudioBlob) {
                     downloadAudio(currentAudioBlob, `tts-${Date.now()}.wav`);
-                    showStatus(elements.ttsStatus, 'success', 'Audio downloaded!');
                     showToast('success', 'Audio downloaded successfully!');
                 } else {
-                    showStatus(elements.ttsStatus, 'error', 'No audio to download');
+                    showToast('error', 'No audio to download');
                 }
             } catch (error) {
-                showStatus(elements.ttsStatus, 'error', error.message);
+                showToast('error', `Download failed: ${error.message}`);
             }
         });
     }
@@ -291,13 +282,12 @@ function setupDownloadHandlers() {
             try {
                 if (currentStreamAudioBlob) {
                     downloadAudio(currentStreamAudioBlob, `stream-${Date.now()}.wav`);
-                    showStatus(elements.streamStatus, 'success', 'Audio downloaded!');
                     showToast('success', 'Streaming audio downloaded successfully!');
                 } else {
-                    showStatus(elements.streamStatus, 'error', 'No audio to download');
+                    showToast('error', 'No audio to download');
                 }
             } catch (error) {
-                showStatus(elements.streamStatus, 'error', error.message);
+                showToast('error', `Download failed: ${error.message}`);
             }
         });
     }
@@ -334,9 +324,9 @@ async function checkServerStatus() {
     }
 }
 
-// Resume TTS AudioContext if suspended
+// Resume TTS AudioContext if suspended (if it exists)
 function resumeTtsAudioContext(elements) {
-    if (elements.ttsAudio && elements.ttsAudio._audioContext) {
+    if (elements?.ttsAudio?._audioContext) {
         const audioContext = elements.ttsAudio._audioContext;
         if (audioContext.state === 'suspended') {
             console.log('[Main] Resuming suspended AudioContext');
@@ -349,7 +339,7 @@ function resumeTtsAudioContext(elements) {
 
 // Handle visibility change to resume AudioContext when tab becomes visible
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && elements && elements.ttsAudio) {
+    if (!document.hidden && elements?.ttsAudio) {
         // Check if TTS tab is active
         const ttsTab = document.querySelector('.tab-content.active[data-tab="tts"]');
         if (ttsTab) {

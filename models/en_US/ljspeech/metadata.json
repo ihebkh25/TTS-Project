@@ -1,0 +1,9 @@
+{
+  "id": "ljspeech",
+  "display_name": "LJSpeech",
+  "description": "English (US) voice, high quality - LJSpeech dataset",
+  "gender": "unknown",
+  "quality": "high",
+  "language": "en_US",
+  "sample_rate": 22050
+}

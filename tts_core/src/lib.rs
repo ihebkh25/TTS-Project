@@ -38,10 +38,22 @@ impl std::fmt::Debug for CachedSynth {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceEntry {
+    pub config: String,
+    pub speaker_id: Option<i64>,
+    pub display_name: Option<String>,
+    pub gender: Option<String>,
+    pub quality: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct TtsManager {
-    // language key -> (config path, default speaker)
+    // language key -> (default voice, voices map)
+    // For backwards compatibility: language key -> (config path, default speaker)
     pub(crate) map: HashMap<String, (String, Option<i64>)>,
+    // New format: language -> (default_voice_id, voices_map)
+    pub(crate) voices_map: HashMap<String, (String, HashMap<String, VoiceEntry>)>,
     // Cache: config path -> (synthesizer, sample_rate)
     cache: Arc<Mutex<HashMap<String, CachedSynth>>>,
 }
@@ -51,39 +63,89 @@ impl TtsManager {
     pub fn new(map: HashMap<String, (String, Option<i64>)>) -> Self {
         Self { 
             map,
+            voices_map: HashMap::new(),
             cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Load from `models/map.json`
+    /// Supports both new format (with multiple voices) and legacy format
     pub fn new_from_mapfile<P: AsRef<Path>>(p: P) -> anyhow::Result<Self> {
         let text = fs::read_to_string(p.as_ref())
             .with_context(|| format!("Failed to load {}", p.as_ref().display()))?;
-        // Accept either { "de_DE": { "config": "...", "default_speaker": 0 }, ... }
-        // OR legacy { "de_DE": "path.json", ... }
         let json: serde_json::Value = serde_json::from_str(&text)
             .with_context(|| "map.json is not valid JSON")?;
 
         let mut map: HashMap<String, (String, Option<i64>)> = HashMap::new();
+        let mut voices_map: HashMap<String, (String, HashMap<String, VoiceEntry>)> = HashMap::new();
+
         if let Some(obj) = json.as_object() {
-            for (k, v) in obj {
+            for (lang, v) in obj {
+                // Check if this is the new format with "voices" key
+                if let serde_json::Value::Object(o) = v {
+                    if o.contains_key("voices") {
+                        // New format: { "default_voice": "...", "voices": {...} }
+                        let default_voice = o
+                            .get("default_voice")
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing 'default_voice' for language {}", lang))?
+                            .to_string();
+                        
+                        let voices_obj = o
+                            .get("voices")
+                            .and_then(|x| x.as_object())
+                            .ok_or_else(|| anyhow::anyhow!("missing 'voices' object for language {}", lang))?;
+                        
+                        let mut voices: HashMap<String, VoiceEntry> = HashMap::new();
+                        for (voice_id, voice_data) in voices_obj {
+                            if let serde_json::Value::Object(vo) = voice_data {
+                                let config = vo
+                                    .get("config")
+                                    .and_then(|x| x.as_str())
+                                    .ok_or_else(|| anyhow::anyhow!("missing 'config' for voice {}", voice_id))?
+                                    .to_string();
+                                
+                                let speaker_id = vo.get("speaker_id").and_then(|x| x.as_i64());
+                                let voice_entry = VoiceEntry {
+                                    config: config.clone(),
+                                    speaker_id,
+                                    display_name: vo.get("display_name").and_then(|x| x.as_str()).map(|s| s.to_string()),
+                                    gender: vo.get("gender").and_then(|x| x.as_str()).map(|s| s.to_string()),
+                                    quality: vo.get("quality").and_then(|x| x.as_str()).map(|s| s.to_string()),
+                                };
+                                
+                                voices.insert(voice_id.clone(), voice_entry);
+                                
+                                // Also populate legacy map with default voice for backwards compatibility
+                                if voice_id == &default_voice {
+                                    map.insert(lang.clone(), (config, speaker_id));
+                                }
+                            }
+                        }
+                        
+                        voices_map.insert(lang.clone(), (default_voice, voices));
+                        continue;
+                    }
+                }
+                
+                // Legacy format handling
                 match v {
                     serde_json::Value::String(path) => {
-                        map.insert(k.clone(), (path.clone(), None));
+                        map.insert(lang.clone(), (path.clone(), None));
                     }
                     serde_json::Value::Object(o) => {
                         let config = o
                             .get("config")
                             .and_then(|x| x.as_str())
-                            .ok_or_else(|| anyhow::anyhow!("missing 'config' for key {}", k))?
+                            .ok_or_else(|| anyhow::anyhow!("missing 'config' for key {}", lang))?
                             .to_string();
                         let spk = o.get("default_speaker").and_then(|x| x.as_i64());
-                        map.insert(k.clone(), (config, spk));
+                        map.insert(lang.clone(), (config, spk));
                     }
                     _ => {
                         return Err(anyhow::anyhow!(
                             "invalid entry for key {} (expected string or object)",
-                            k
+                            lang
                         ));
                     }
                 }
@@ -94,13 +156,22 @@ impl TtsManager {
 
         Ok(Self { 
             map,
+            voices_map,
             cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
     /// List supported language keys
     pub fn list_languages(&self) -> Vec<String> {
-        self.map.keys().cloned().collect()
+        // Combine languages from both maps
+        let mut langs: Vec<String> = self.map.keys().cloned().collect();
+        for lang in self.voices_map.keys() {
+            if !langs.contains(lang) {
+                langs.push(lang.clone());
+            }
+        }
+        langs.sort();
+        langs
     }
 
     /// Iterate raw mapping (for /voices/detail)
@@ -109,13 +180,43 @@ impl TtsManager {
     }
 
     /// Resolve config (and default speaker) for a language key
-    pub fn config_for(&self, lang_opt: Option<&str>) -> anyhow::Result<(String, Option<i64>)> {
-        // choose your preferred default here
+    /// If voice_opt is provided, uses that voice; otherwise uses default voice
+    pub fn config_for(&self, lang_opt: Option<&str>, voice_opt: Option<&str>) -> anyhow::Result<(String, Option<i64>)> {
         let lang = lang_opt.unwrap_or("de_DE");
+        
+        // Try new format first
+        if let Some((default_voice, voices)) = self.voices_map.get(lang) {
+            let voice_id = voice_opt.unwrap_or(default_voice);
+            if let Some(voice_entry) = voices.get(voice_id) {
+                return Ok((voice_entry.config.clone(), voice_entry.speaker_id));
+            }
+            return Err(anyhow::anyhow!(
+                "Unknown voice '{}' for language '{}'. Available voices: {}",
+                voice_id,
+                lang,
+                voices.keys().cloned().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        
+        // Fall back to legacy format
         self.map
             .get(lang)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!(format!("Unknown language key: {lang}. Use /voices to list.")))
+    }
+    
+    /// List all voices for a language
+    pub fn list_voices_for_language(&self, lang: &str) -> Vec<(String, VoiceEntry)> {
+        if let Some((_, voices)) = self.voices_map.get(lang) {
+            voices.iter().map(|(id, entry)| (id.clone(), entry.clone())).collect()
+        } else {
+            Vec::new()
+        }
+    }
+    
+    /// Get default voice for a language
+    pub fn get_default_voice(&self, lang: &str) -> Option<String> {
+        self.voices_map.get(lang).map(|(default, _)| default.clone())
     }
 
     /// Read sample rate from model config JSON
@@ -210,17 +311,18 @@ impl TtsManager {
 
     /// Legacy helper kept for compatibility (uses default speaker)
     pub fn synthesize_blocking(&self, text: &str, lang_opt: Option<&str>) -> anyhow::Result<Vec<f32>> {
-        self.synthesize_with(text, lang_opt, None)
+        self.synthesize_with(text, lang_opt, None, None)
     }
 
-    /// New: allow an optional speaker override
+    /// New: allow an optional speaker override and voice selection
     pub fn synthesize_with(
         &self,
         text: &str,
         lang_opt: Option<&str>,
         _speaker_override: Option<i64>, // kept for future use
+        voice_opt: Option<&str>, // voice ID (e.g., "norman", "thorsten")
     ) -> anyhow::Result<Vec<f32>> {
-        let (cfg_path, _default_speaker) = self.config_for(lang_opt)?;
+        let (cfg_path, _default_speaker) = self.config_for(lang_opt, voice_opt)?;
 
         // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
@@ -248,8 +350,9 @@ impl TtsManager {
         text: &str,
         lang_opt: Option<&str>,
         _speaker_override: Option<i64>, // kept for future use
+        voice_opt: Option<&str>, // voice ID (e.g., "norman", "thorsten")
     ) -> anyhow::Result<(Vec<f32>, u32)> {
-        let (cfg_path, _default_speaker) = self.config_for(lang_opt)?;
+        let (cfg_path, _default_speaker) = self.config_for(lang_opt, voice_opt)?;
 
         // Sample rate from cache
         let sample_rate = self.get_sample_rate(&cfg_path)?;

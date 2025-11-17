@@ -1,11 +1,450 @@
-/* TTS Tab Specific Styles */
+/* TTS Tab Specific Styles - ChatGPT Style */
 
-.custom-audio-player {
-    margin-top: var(--space-xl);
-    padding: var(--space-md);
+/* TTS section uses flex layout when active */
+#ttsSection.active,
+#streamSection.active {
+    display: flex !important;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100%;
+    padding: 0 !important; /* Override tab-content padding for full-height layout */
+    margin: 0;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--bg);
+    /* Ensure full height within main-content */
+    min-height: 0;
+}
+
+/* Results container - scrollable area (like chat-messages-container) */
+.tts-results-container {
+    flex: 1 1 auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-height: 0;
+    width: 100%;
+    /* Ensure it takes available space */
+    height: 100%;
+}
+
+.tts-results-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    /* Add padding at bottom so last content isn't hidden behind input */
+    padding-bottom: 1rem;
+}
+
+/* Center content with max width like ChatGPT */
+.tts-results-content::before {
+    content: '';
+    flex: 1;
+    min-height: 0;
+}
+
+.tts-results-content::after {
+    content: '';
+    flex: 1;
+    min-height: 0;
+}
+
+/* Welcome message */
+.tts-welcome-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3rem 1.5rem;
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    animation: messageFadeIn 0.3s ease;
+}
+
+.tts-welcome-message .welcome-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.8;
+}
+
+.tts-welcome-message h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 0.5rem 0;
+}
+
+.tts-welcome-message p {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.6;
+}
+
+@keyframes messageFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* TTS Form - Fixed at bottom (Chat style) */
+.tts-form {
+    position: sticky;
+    bottom: 0;
+    width: 100%;
+    padding: 1rem;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    box-sizing: border-box;
+    z-index: 10;
+    /* Ensure form stays at bottom and doesn't scroll */
+    margin-top: 0;
+    /* Add backdrop blur for better visibility */
+    backdrop-filter: blur(10px);
+    background: rgba(21, 20, 20, 0.95);
+    /* Make form a flex container for proper ordering */
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tts-form-wrapper {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border-lighter);
+    border-radius: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    order: 0; /* Input wrapper should be first */
+}
+
+.tts-form-wrapper:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.15);
+}
+
+.tts-form-input-container {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 24px;
+}
+
+#ttsText,
+#streamText {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.95rem;
+    padding: 0.5rem 0.75rem;
+    outline: none;
+    resize: none;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: inherit;
+    line-height: 1.6;
+    min-height: calc(0.95rem * 1.6 * 3 + 1rem); /* 3 lines + padding */
+    height: calc(0.95rem * 1.6 * 3 + 1rem); /* 3 lines + padding */
+    position: relative;
+    z-index: 2;
+}
+
+#ttsText::placeholder,
+#streamText::placeholder {
+    color: var(--text-dim);
+}
+
+.tts-char-count {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-align: right;
+    padding: 0.25rem 0.75rem 0;
+    flex-shrink: 0;
+}
+
+.tts-form-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-lighter);
+    margin-top: 0.5rem;
+    flex-shrink: 0;
+}
+
+.tts-voice-select-wrapper {
+    flex: 1;
+    min-width: 0;
+}
+
+.tts-voice-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--surface-light);
+    border: 1px solid var(--border-lighter);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 40px;
+}
+
+.tts-voice-select:hover {
+    border-color: var(--border);
+    background: var(--surface-lighter);
+}
+
+.tts-voice-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+.tts-voice-select optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+}
+
+.tts-voice-select option {
+    padding: var(--space-sm) var(--space-md);
+}
+
+.tts-send-btn {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.tts-send-btn:hover:not(:disabled) {
+    background: var(--primary-dark);
+    transform: scale(1.05);
+}
+
+.tts-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tts-send-btn .send-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.tts-send-btn .btn-text {
+    display: none; /* Hide text on desktop, show icon only */
+}
+
+/* Voice controls (like dictation mode) */
+.tts-voice-controls {
+    max-width: 768px;
+    width: 100%;
+    margin: 0.5rem auto 0;
+    padding: 0.75rem 1rem;
     background: var(--surface-light);
     border: 1px solid var(--border-lighter);
     border-radius: var(--radius-lg);
+    flex-shrink: 0;
+    /* Ensure it's part of the form and doesn't break layout */
+    order: 1;
+}
+
+.tts-voice-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.tts-language-select-compact-wrapper,
+.tts-voice-select-compact-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.tts-language-select-compact-wrapper {
+    flex: 1;
+    min-width: 140px;
+}
+
+.tts-voice-select-compact-wrapper {
+    flex: 1;
+    min-width: 140px;
+}
+
+.tts-voice-label-compact {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.tts-voice-select-compact {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border-lighter);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 120px;
+    flex: 1;
+    min-height: 32px;
+}
+
+.tts-voice-select-compact:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--surface-lighter);
+}
+
+.tts-voice-select-compact:hover {
+    border-color: var(--border);
+    background: var(--surface-lighter);
+}
+
+.tts-voice-select-compact:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+.tts-voice-select-compact optgroup {
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--space-xs) 0;
+}
+
+.tts-voice-select-compact option {
+    padding: var(--space-sm) var(--space-md);
+}
+
+.tts-status-container {
+    /* Hide status container - we use toast notifications instead */
+    display: none;
+}
+
+/* Status message wrapper (above audio player) */
+.tts-status-message-wrapper {
+    display: flex;
+    width: 100%;
+    padding: 1rem 0 0.5rem;
+    box-sizing: border-box;
+    animation: messageFadeIn 0.3s ease;
+}
+
+.tts-status-message-container {
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    box-sizing: border-box;
+}
+
+.tts-status-message {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    background: var(--surface-light);
+    border: 1px solid var(--border-lighter);
+    box-sizing: border-box;
+}
+
+.tts-status-message.success {
+    background: rgba(20, 184, 166, 0.1);
+    border-color: rgba(20, 184, 166, 0.3);
+    color: #14b8a6;
+}
+
+.tts-status-message.error {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.3);
+    color: #f87171;
+}
+
+.tts-status-message.info {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: rgba(96, 165, 250, 0.3);
+    color: #60a5fa;
+}
+
+/* Message wrapper for centering audio player (like chat messages) */
+.tts-audio-wrapper {
+    display: flex;
+    width: 100%;
+    padding: 1.5rem 0;
+    box-sizing: border-box;
+}
+
+.tts-audio-container {
+    max-width: 768px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    box-sizing: border-box;
+}
+
+/* Audio player styling - centered like messages */
+.custom-audio-player {
+    width: 100%;
+    margin: 0;
+    padding: var(--space-lg);
+    background: var(--surface-light);
+    border: 1px solid var(--border-lighter);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    animation: messageFadeIn 0.3s ease;
+    box-sizing: border-box;
 }
 
 .audio-player-header {
@@ -126,17 +565,91 @@
 
 .audio-waveform-container {
     width: 100%;
+    max-width: 100%;
     height: 60px;
-    background: var(--bg);
+    background: #000; /* Match spectrogram black background */
     border-radius: var(--radius);
     overflow: hidden;
-    border: 1px solid var(--border-lighter);
+    border: 2px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); /* Match spectrogram shadow */
+    position: relative;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+}
+
+.audio-waveform-container:hover {
+    border-color: var(--primary);
+    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
 }
 
 .audio-waveform {
     width: 100%;
+    max-width: 100%;
     height: 100%;
     display: block;
+    background: #000; /* Match spectrogram black background */
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    z-index: 3; /* Above progress overlay */
+    border-radius: var(--radius);
+    box-sizing: border-box;
+}
+
+/* Playback progress indicator on waveform */
+.audio-waveform-container::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--progress, 0%);
+    height: 100%;
+    background: rgba(99, 102, 241, 0.12); /* Reduced opacity so it doesn't obscure waveform */
+    pointer-events: none;
+    transition: width 0.05s linear;
+    z-index: 1; /* Behind waveform */
+    mix-blend-mode: multiply; /* Changed from screen to multiply for better visibility */
+    will-change: width;
+}
+
+/* Progress line indicator */
+.audio-waveform-progress-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background: var(--primary);
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.8;
+    box-shadow: 0 0 4px rgba(99, 102, 241, 0.6);
+    transition: left 0.05s linear;
+    will-change: left;
+}
+
+/* Hover time tooltip */
+.audio-waveform-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: var(--text);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+    border: 1px solid var(--border);
+}
+
+.audio-waveform-container:hover .audio-waveform-tooltip {
+    opacity: 1;
 }
 
 .audio-progress-container {
@@ -183,19 +696,22 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border);
 }
 
 .spectrogram-header {
     display: flex;
     align-items: center;
-    padding-bottom: var(--space-xs);
-    border-bottom: 1px solid var(--border-lighter);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--border);
 }
 
 .spectrogram-title {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-dim);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
     margin: 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -205,6 +721,10 @@
     width: 100%;
     max-width: 100%;
     overflow: hidden;
+    background: #000;
+    border-radius: var(--radius);
+    border: 2px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .spectrogram-canvas {
@@ -212,20 +732,76 @@
     max-width: 100%;
     height: 200px;
     border-radius: var(--radius);
-    border: 1px solid var(--border-lighter);
     background: #000;
     display: block;
     box-sizing: border-box;
 }
 
-/* Layout: Always vertical (stacked) */
-.spectrogram-section {
-    max-width: 100%;
+
+/* Scrollbar styling */
+.tts-results-content::-webkit-scrollbar {
+    width: 12px;
+    display: block;
+}
+
+.tts-results-content::-webkit-scrollbar-track {
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+}
+
+.tts-results-content::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 6px;
+    border: 2px solid var(--bg);
+    min-height: 40px;
+}
+
+.tts-results-content::-webkit-scrollbar-thumb:hover {
+    background: var(--border-lighter);
+}
+
+.tts-results-content {
+    scrollbar-width: auto;
+    scrollbar-color: var(--border-light) var(--bg);
 }
 
 /* Responsive */
-@media (max-width: 480px) {
+@media (max-width: 768px) {
+    .tts-form {
+        padding: 0.75rem;
+    }
+    
+    .tts-form-wrapper {
+        padding: 0.5rem;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .tts-form-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .tts-send-btn {
+        width: 100%;
+        height: 2.5rem;
+        border-radius: var(--radius);
+    }
+    
+    .tts-send-btn .btn-text {
+        display: inline; /* Show text on mobile */
+    }
+    
+    .tts-welcome-message {
+        padding: 2rem 1rem;
+    }
+    
+    .tts-welcome-message h2 {
+        font-size: 1.25rem;
+    }
+    
     .custom-audio-player {
+        margin: 1rem auto;
         padding: var(--space-md);
     }
     

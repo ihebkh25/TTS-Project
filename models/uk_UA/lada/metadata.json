@@ -1,0 +1,9 @@
+{
+  "id": "lada",
+  "display_name": "Lada",
+  "description": "Ukrainian voice, low quality (x_low)",
+  "gender": "female",
+  "quality": "x_low",
+  "language": "uk_UA",
+  "sample_rate": 16000
+}

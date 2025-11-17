@@ -7,7 +7,7 @@ import { showToast } from '../utils/toast.js';
 import { base64ToBlob } from '../utils/audio.js';
 import { setupAudioPlayer } from '../components/audioPlayer.js';
 import { visualizeAudioSpectrogram } from '../components/spectrogram.js';
-import { populateSpeakerSelect } from '../utils/voices.js';
+import { populateLanguageSelect, populateVoiceSelectForLanguage, parseVoiceKey, getDefaultVoiceForLanguage } from '../utils/voices.js';
 
 /**
  * Initialize TTS tab
@@ -18,19 +18,96 @@ import { populateSpeakerSelect } from '../utils/voices.js';
 export function initTtsTab(elements, state) {
     const { setCurrentAudioBlob, voiceDetails = [] } = state;
     
-    // Handle language change to populate speaker select
+    // Populate language and voice dropdowns when voiceDetails are available
+    function populateVoiceDropdowns() {
+        if (!voiceDetails || voiceDetails.length === 0) return;
+        
+        // Populate language dropdown
+        if (elements.ttsLanguage) {
+            populateLanguageSelect(elements.ttsLanguage, voiceDetails);
+            
+            // Set up language change handler
+            elements.ttsLanguage.addEventListener('change', handleLanguageChange);
+            
+            // Trigger initial population if a language is already selected
+            if (elements.ttsLanguage.value) {
+                handleLanguageChange();
+            }
+        }
+    }
+    
+    // Handle language selection change
     function handleLanguageChange() {
-        if (!elements.ttsLanguage || !elements.speakerGroup) return;
+        const selectedLang = elements.ttsLanguage?.value;
+        const voiceSelect = elements.ttsVoice;
         
-        const language = elements.ttsLanguage.value;
-        const voiceDetail = voiceDetails.find(v => v.key === language);
+        if (!voiceSelect) return;
         
-        if (voiceDetail && voiceDetail.speaker !== null) {
-            // Show speaker selection if available
-            populateSpeakerSelect(elements.ttsSpeaker, language, voiceDetails);
-            elements.speakerGroup.style.display = 'block';
+        if (!selectedLang) {
+            // No language selected - disable voice dropdown
+            voiceSelect.disabled = true;
+            voiceSelect.innerHTML = '<option value="">Select language first...</option>';
+            return;
+        }
+        
+        // Enable voice dropdown and populate with voices for selected language
+        voiceSelect.disabled = false;
+        populateVoiceSelectForLanguage(voiceSelect, selectedLang, voiceDetails);
+        
+        // Auto-select default voice for the language
+        const defaultVoice = getDefaultVoiceForLanguage(selectedLang, voiceDetails);
+        if (defaultVoice && voiceSelect.querySelector(`option[value="${defaultVoice.key}"]`)) {
+            voiceSelect.value = defaultVoice.key;
+        }
+    }
+    
+    // Populate dropdowns on initialization if voiceDetails are already loaded
+    if (voiceDetails && voiceDetails.length > 0) {
+        populateVoiceDropdowns();
+    }
+    
+    // Show status message in the status container above audio player
+    let statusTimeoutId = null;
+    
+    function showTtsStatus(type, message) {
+        const statusWrapper = document.getElementById('ttsStatusMessageWrapper');
+        const statusMessage = document.getElementById('ttsStatusMessage');
+        
+        if (!statusWrapper || !statusMessage) return;
+        
+        // Clear any existing timeout
+        if (statusTimeoutId) {
+            clearTimeout(statusTimeoutId);
+            statusTimeoutId = null;
+        }
+        
+        if (message) {
+            statusMessage.className = `tts-status-message ${type}`;
+            statusMessage.textContent = message;
+            statusWrapper.style.display = 'flex';
+            
+            // Only auto-hide info messages (like "Generating..."), not success messages
+            // Success messages stay until a new request is sent
+            if (type === 'info') {
+                // Info messages can auto-hide after a delay if needed
+                // But for now, we'll keep them visible too
+            }
         } else {
-            elements.speakerGroup.style.display = 'none';
+            hideTtsStatus();
+        }
+    }
+    
+    // Hide status message
+    function hideTtsStatus() {
+        // Clear any pending timeout
+        if (statusTimeoutId) {
+            clearTimeout(statusTimeoutId);
+            statusTimeoutId = null;
+        }
+        
+        const statusWrapper = document.getElementById('ttsStatusMessageWrapper');
+        if (statusWrapper) {
+            statusWrapper.style.display = 'none';
         }
     }
     
@@ -38,10 +115,22 @@ export function initTtsTab(elements, state) {
     function setupCharacterCounter() {
         if (!elements.ttsText || !elements.ttsCharCount) return;
         
+        // Auto-resize textarea (minimum 3 lines, max 200px)
+        const minHeight = parseFloat(getComputedStyle(elements.ttsText).fontSize) * 1.6 * 3 + 16; // 3 lines + padding
+        const autoResize = () => {
+            elements.ttsText.style.height = 'auto';
+            const newHeight = Math.max(minHeight, Math.min(elements.ttsText.scrollHeight, 200)); // min 3 lines, max 200px
+            elements.ttsText.style.height = `${newHeight}px`;
+        };
+        
         elements.ttsText.addEventListener('input', () => {
             const count = elements.ttsText.value.length;
             elements.ttsCharCount.textContent = count;
+            autoResize();
         });
+        
+        // Initial resize
+        autoResize();
         elements.ttsCharCount.textContent = elements.ttsText.value.length;
     }
     
@@ -49,31 +138,53 @@ export function initTtsTab(elements, state) {
     async function handleTtsSubmit(e) {
         e.preventDefault();
         
-        if (!elements.ttsText || !elements.ttsLanguage) return;
+        if (!elements.ttsText || !elements.ttsLanguage || !elements.ttsVoice) return;
         
         const text = elements.ttsText.value.trim();
-        const language = elements.ttsLanguage.value;
-        const speaker = elements.ttsSpeaker?.value ? parseInt(elements.ttsSpeaker.value) : null;
+        const selectedLang = elements.ttsLanguage.value;
+        const voiceKey = elements.ttsVoice.value;
         
         if (!text) {
-            showStatus(elements.ttsStatus, 'error', 'Please enter some text to synthesize');
+            showTtsStatus('error', 'Please enter some text to synthesize');
             return;
         }
         
-        if (!language) {
-            showStatus(elements.ttsStatus, 'error', 'Please select a language');
+        if (!selectedLang) {
+            showTtsStatus('error', 'Please select a language');
             return;
         }
+        
+        if (!voiceKey) {
+            showTtsStatus('error', 'Please select a voice');
+            return;
+        }
+        
+        // Parse voice key to get language and voice
+        const { lang: language, voice } = parseVoiceKey(voiceKey);
         
         setButtonState(elements.ttsBtn, true, 'Generating...');
-        showStatus(elements.ttsStatus, 'info', 'Generating speech...');
+        showTtsStatus('info', 'Generating speech...');
         if (elements.ttsDownloadBtn) elements.ttsDownloadBtn.style.display = 'none';
-        if (elements.ttsAudioPlayer) elements.ttsAudioPlayer.classList.add('hidden');
+        
+        // Hide audio player wrapper
+        const audioWrapper = document.getElementById('ttsAudioWrapper');
+        if (audioWrapper) {
+            audioWrapper.classList.add('hidden');
+        } else if (elements.ttsAudioPlayer) {
+            elements.ttsAudioPlayer.classList.add('hidden');
+        }
+        
+        // Show welcome message again while generating (hide status if no audio yet)
+        const welcomeMessage = document.querySelector('.tts-welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.style.display = 'flex';
+        }
+        
         if (elements.ttsSpectrogram) elements.ttsSpectrogram.classList.add('hidden');
         
         try {
-            console.log('[TTS] Generating speech:', { text: text.substring(0, 50) + '...', language, speaker });
-            const data = await generateTTS(text, language, speaker);
+            console.log('[TTS] Generating speech:', { text: text.substring(0, 50) + '...', language, voice, voiceKey });
+            const data = await generateTTS(text, language, null, voice);
             console.log('[TTS] Response received:', { 
                 hasAudio: !!data.audio_base64, 
                 audioLength: data.audio_base64?.length || 0,
@@ -92,15 +203,46 @@ export function initTtsTab(elements, state) {
                 setCurrentAudioBlob(audioBlob);
             }
             
+            // Hide welcome message and show audio player
+            const welcomeMessage = document.querySelector('.tts-welcome-message');
+            if (welcomeMessage) {
+                welcomeMessage.style.display = 'none';
+            }
+            
+            // Show status message above audio player
+            const statusWrapper = document.getElementById('ttsStatusMessageWrapper');
+            if (statusWrapper) {
+                statusWrapper.style.display = 'flex';
+            }
+            
             // Show download button (using correct element name)
             if (elements.ttsDownloadBtn) {
                 elements.ttsDownloadBtn.style.display = 'block';
             }
             
-            // Set up custom audio player
+            // Show audio player wrapper FIRST (before generating waveform)
+            // This ensures canvas has valid dimensions (offsetWidth > 0)
+            const audioWrapper = document.getElementById('ttsAudioWrapper');
+            if (audioWrapper) {
+                audioWrapper.classList.remove('hidden');
+            } else if (elements.ttsAudioPlayer) {
+                elements.ttsAudioPlayer.classList.remove('hidden');
+            }
+            
+            // Wait a frame to ensure DOM has updated and canvas dimensions are available
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            
+            // Set up custom audio player (now that wrapper is visible)
             console.log('[TTS] Setting up audio player...');
             await setupAudioPlayer(elements, data.audio_base64);
             console.log('[TTS] Audio player setup complete');
+            
+            // Scroll to audio player smoothly after everything is set up
+            if (audioWrapper) {
+                audioWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else if (elements.ttsAudioPlayer) {
+                elements.ttsAudioPlayer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
             
             // Set up real-time spectrogram visualization
             if (elements.ttsSpectrogram && elements.ttsSpectrogramCanvas && elements.ttsAudio) {
@@ -144,12 +286,9 @@ export function initTtsTab(elements, state) {
                 });
             }
             
-            showStatus(elements.ttsStatus, 'success', 
-                `Speech generated successfully!<br>
-                 Duration: ${(data.duration_ms / 1000).toFixed(2)}s<br>
-                 Sample Rate: ${data.sample_rate}Hz`);
-            
-            showToast('success', 'Speech generated successfully!');
+            // Show success status with audio info
+            const duration = (data.duration_ms / 1000).toFixed(2);
+            showTtsStatus('success', `Speech generated successfully! Duration: ${duration}s • Sample Rate: ${data.sample_rate}Hz`);
             
         } catch (error) {
             console.error('[TTS] Error:', error);
@@ -172,8 +311,8 @@ export function initTtsTab(elements, state) {
                 errorMsg = 'Failed to process audio data. Please try again.';
             }
             
-            showStatus(elements.ttsStatus, 'error', `Error: ${errorMsg}`);
-            showToast('error', `Error: ${errorMsg}`);
+            // Show error status
+            showTtsStatus('error', `Error: ${errorMsg}`);
         } finally {
             setButtonState(elements.ttsBtn, false, 'Generate Speech');
         }
@@ -184,21 +323,17 @@ export function initTtsTab(elements, state) {
         if (elements.ttsForm) {
             elements.ttsForm.addEventListener('submit', handleTtsSubmit);
         }
-        
-        // Language change handler for speaker selection
-        if (elements.ttsLanguage) {
-            elements.ttsLanguage.addEventListener('change', handleLanguageChange);
-        }
     }
     
     // Initialize
     setupCharacterCounter();
     setupEventListeners();
     
-    return {
-        handleTtsSubmit,
-        handleLanguageChange,
-        setupCharacterCounter
-    };
+    // Return public API
+        return {
+            handleTtsSubmit,
+            populateVoiceDropdown: populateVoiceDropdowns,
+            setupCharacterCounter
+        };
 }
 

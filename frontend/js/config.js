@@ -169,7 +169,8 @@ export const LANGUAGE_NAMES = {
     'es_ES': 'Spanish (Spain)',
     'it_IT': 'Italian (Italy)',
     'pt_PT': 'Portuguese (Portugal)',
-    'nl_NL': 'Dutch (Netherlands)'
+    'nl_NL': 'Dutch (Netherlands)',
+    'uk_UA': 'Ukrainian (Ukraine)'
 };
 
 export const TTS_TO_SPEECH_LANG = {
@@ -180,5 +181,6 @@ export const TTS_TO_SPEECH_LANG = {
     'es_ES': 'es-ES',
     'it_IT': 'it-IT',
     'pt_PT': 'pt-PT',
-    'nl_NL': 'nl-NL'
+    'nl_NL': 'nl-NL',
+    'uk_UA': 'uk-UA'
 };

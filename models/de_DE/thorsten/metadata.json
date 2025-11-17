@@ -1,0 +1,13 @@
+{
+  "id": "thorsten",
+  "display_name": "Thorsten",
+  "description": "German (Germany) male voice, high quality",
+  "gender": "male",
+  "quality": "high",
+  "sample_rate": 22050,
+  "language": "de_DE",
+  "accent": "standard",
+  "tags": ["male", "standard", "high"],
+  "preview_text": "Hallo, ich bin Thorsten. Dies ist ein Test des Text-zu-Sprache-Systems.",
+  "note": "Upgraded from medium to high quality"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "mls",
+  "display_name": "MLS",
+  "description": "German (Germany) voice, medium quality - Multilingual LibriSpeech dataset",
+  "gender": "unknown",
+  "quality": "medium",
+  "language": "de_DE",
+  "sample_rate": 22050
+}

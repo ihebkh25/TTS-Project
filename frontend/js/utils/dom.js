@@ -12,10 +12,12 @@ export function initElements() {
         
         // Inputs
         ttsText: document.getElementById('ttsText'),
-        ttsLanguage: document.getElementById('ttsLanguage'),
-        ttsSpeaker: document.getElementById('ttsSpeaker'),
+        ttsVoice: document.getElementById('ttsVoice'),
+        ttsLanguage: document.getElementById('ttsLanguage'), // Language selector (first step)
         streamText: document.getElementById('streamText'),
-        streamLanguage: document.getElementById('streamLanguage'),
+        ttsResultsContent: document.getElementById('ttsResultsContent'),
+        streamVoice: document.getElementById('streamVoice'),
+        streamLanguage: document.getElementById('streamLanguage'), // Language selector (first step)
         chatInput: document.getElementById('chatInput'),
         chatMicBtn: document.getElementById('chatMicBtn'),
         voiceModeToggleBtn: document.getElementById('voiceModeToggleBtn'),
@@ -35,9 +37,7 @@ export function initElements() {
         clearChatBtn: document.getElementById('clearChatBtn'),
         exportChatBtn: document.getElementById('exportChatBtn'),
         
-        // Status and Output
-        ttsStatus: document.getElementById('ttsStatus'),
-        streamStatus: document.getElementById('streamStatus'),
+        // Status and Output (legacy status elements removed - using inline status messages now)
         chatStatus: document.getElementById('chatStatus'),
         serverStatus: document.getElementById('serverStatus'),
         serverInfo: document.getElementById('serverInfo'),
@@ -45,7 +45,6 @@ export function initElements() {
         // Audio and Media
         ttsAudio: document.getElementById('ttsAudio'),
         streamAudio: document.getElementById('streamAudio'),
-        streamAudioContainer: document.getElementById('streamAudioContainer'),
         streamDownloadBtn: document.getElementById('streamDownloadBtn'),
         ttsSpectrogram: document.getElementById('ttsSpectrogram'),
         ttsSpectrogramCanvas: document.getElementById('ttsSpectrogramCanvas'),
@@ -82,7 +81,8 @@ export function initElements() {
         voiceChatBotCanvas: document.getElementById('voiceResponseCanvas'),
         voiceBotSpectrogram: document.getElementById('voiceBotSpectrogram'),
         voiceChatStatus: document.getElementById('voiceChatStatus'),
-        voiceChatLanguage: document.getElementById('voiceChatLanguage'),
+        voiceChatVoice: document.getElementById('voiceChatVoice'),
+        voiceChatLanguage: document.getElementById('voiceChatLanguage'), // Language selector (first step)
         voiceTranscriptContainer: document.getElementById('voiceTranscriptContainer'),
         voiceTranscriptText: document.getElementById('voiceTranscriptText'),
         voiceConversationLog: document.getElementById('voiceConversationLog'),

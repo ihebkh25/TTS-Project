@@ -167,10 +167,25 @@ export async function getVoiceDetails() {
 
 /**
  * Generate TTS audio
+ * @param {string} text - Text to synthesize
+ * @param {string} language - Language code (e.g., "en_US")
+ * @param {number|null} speaker - Speaker ID (legacy, optional)
+ * @param {string|null} voice - Voice ID (e.g., "norman") or full key (e.g., "en_US:norman")
  */
-export async function generateTTS(text, language, speaker = null) {
+export async function generateTTS(text, language, speaker = null, voice = null) {
     const requestBody = { text, language };
-    if (speaker !== null) {
+    
+    // Support both new voice parameter and legacy speaker parameter
+    if (voice !== null && voice !== undefined) {
+        // If voice contains ":", it's a full key, extract just the voice part
+        if (voice.includes(':')) {
+            const [, voiceId] = voice.split(':', 2);
+            requestBody.voice = voiceId;
+        } else {
+            requestBody.voice = voice;
+        }
+    } else if (speaker !== null && speaker !== undefined) {
+        // Legacy support
         requestBody.speaker = speaker;
     }
     
@@ -178,6 +193,8 @@ export async function generateTTS(text, language, speaker = null) {
         textLength: text.length, 
         language, 
         speaker,
+        voice,
+        requestBody,
         url: `${getApiBase()}/tts`
     });
     
@@ -236,11 +253,18 @@ export async function sendChatMessage(message, conversationId = null) {
 
 /**
  * Send voice chat message (with audio response)
+ * @param {string} message - Message to send
+ * @param {string} language - Language code (e.g., "en_US")
+ * @param {string|null} conversationId - Conversation ID (optional)
+ * @param {string|null} voice - Voice ID (e.g., "norman") (optional)
  */
-export async function sendVoiceChatMessage(message, language, conversationId = null) {
+export async function sendVoiceChatMessage(message, language, conversationId = null, voice = null) {
     const requestBody = { message, language };
     if (conversationId) {
         requestBody.conversation_id = conversationId;
+    }
+    if (voice !== null && voice !== undefined) {
+        requestBody.voice = voice;
     }
     
     const response = await fetchWithErrorHandling(`${getApiBase()}/voice-chat`, {

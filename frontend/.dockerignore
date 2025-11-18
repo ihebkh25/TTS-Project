@@ -1,7 +1,38 @@
+# Development files
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build tools
+package.json
+package-lock.json
+yarn.lock
+webpack.config.js
+vite.config.js
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
 *.md
+README.md
+
+# Scripts
 serve_frontend.py
 start_frontend.sh
-__pycache__/
-*.pyc
-.DS_Store
 
+# Docker
+Dockerfile
+.dockerignore
+
+# Other
+*.log
+.env
+.env.local

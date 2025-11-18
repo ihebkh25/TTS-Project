@@ -1,12 +1,56 @@
+# Build artifacts
 target/
+*.rs.bk
+Cargo.lock.bak
+
+# Git
 .git/
+.gitignore
+.gitattributes
+
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Documentation (moved to docs/)
 *.md
+!README.md
+
+# Tests
 tests/
+**/tests/
+**/*_test.rs
+**/*_tests.rs
+
+# Frontend (built separately)
 frontend/
+
+# Scripts
 scripts/
+
+# Voice models (handled separately)
 piper-voices/
+voiceModels/
+
+# Environment
 .env
+.env.local
+.env.*.local
 *.log
 
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Other
+*.pdf
+*.zip
+*.tar.gz

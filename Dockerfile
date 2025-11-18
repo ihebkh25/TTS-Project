@@ -1,7 +1,6 @@
-# Multi-stage build for optimized Rust backend
+# Build stage
+FROM rust:1.82-slim AS builder
 
-# Stage 1: Dependencies cache layer
-FROM rust:1.82-slim AS deps
 WORKDIR /app
 
 # Install build dependencies
@@ -19,66 +18,41 @@ RUN apt-get update && \
     espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first for better layer caching
+# Copy workspace and all crates
 COPY Cargo.toml Cargo.lock ./
-COPY tts_core/Cargo.toml ./tts_core/
-COPY llm_core/Cargo.toml ./llm_core/
-COPY server/Cargo.toml ./server/
-
-# Create a dummy source to build dependencies
-RUN mkdir -p tts_core/src llm_core/src server/src && \
-    echo "fn main() {}" > server/src/main.rs && \
-    echo "" > tts_core/src/lib.rs && \
-    echo "" > llm_core/src/lib.rs
-
-# Build dependencies only (this layer will be cached)
-ENV CARGO_NET_SPARSE_REGISTRY=true
-RUN cargo build --release --bin server && \
-    rm -rf server/src/main.rs tts_core/src/lib.rs llm_core/src/lib.rs && \
-    rm -f target/release/server && \
-    rm -rf target/release/deps/server-* && \
-    rm -rf target/release/deps/libtts_core-* && \
-    rm -rf target/release/deps/libllm_core-*
-
-# Stage 2: Build the actual application
-FROM deps AS builder
-WORKDIR /app
-
-# Copy source code
 COPY tts_core ./tts_core
 COPY llm_core ./llm_core
 COPY server ./server
 
-# Build the release binary with optimizations
-# The dependencies are already built, so this will be faster
+# Build release binary
+# Use sparse registry index to save space
 ENV CARGO_NET_SPARSE_REGISTRY=true
-RUN touch server/src/main.rs tts_core/src/lib.rs llm_core/src/lib.rs && \
-    cargo build --release --bin server
+RUN cargo build --release --bin server
 
-# Stage 3: Runtime image
+# Runtime stage
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install only runtime dependencies
+# Install runtime dependencies (including espeak!)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     libespeak-ng1 \
     espeak-ng-data && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt-get clean
+    rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app/models && \
-    chown -R appuser:appuser /app
+# Create non-root user
+RUN useradd -m -u 1000 appuser
 
 # Copy binary from builder
-COPY --from=builder --chown=appuser:appuser /app/target/release/server /app/server
+COPY --from=builder /app/target/release/server /app/server
 
-# Copy models (read-only)
-COPY --chown=appuser:appuser models /app/models
+# Models are mounted as a volume at runtime (see docker-compose.yml)
+# This avoids bloating the image and allows updating models without rebuilding
+
+# Set ownership
+RUN chown -R appuser:appuser /app
 
 USER appuser
 
@@ -87,9 +61,5 @@ EXPOSE 8085
 ENV PORT=8085
 ENV RUST_LOG=info
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD sh -c "wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1"
-
-# Set PIPER_ESPEAKNG_DATA_DIRECTORY at runtime
+# Set PIPER_ESPEAKNG_DATA_DIRECTORY at runtime (finds espeak-ng-data directory dynamically)
 CMD ["sh", "-c", "export PIPER_ESPEAKNG_DATA_DIRECTORY=$(find /usr/lib -type d -name 'espeak-ng-data' -exec dirname {} \\; | head -1) && exec /app/server"]

@@ -334,15 +334,46 @@ async function setupLlmProviderSelector() {
         llmProviderSelector.style.display = 'none';
     }
     
-    elements.llmProvider.addEventListener('change', (e) => {
-        const provider = e.target.value;
-        const providerName = provider === 'ollama' ? 'Local (Ollama)' : 'OpenAI';
-        localStorage.setItem('llmProvider', provider);
-        showToast('warning', `LLM provider selector changed to ${providerName}. Note: The backend provider is set at server startup. To actually switch providers, set LLM_PROVIDER=${provider} in .env or docker-compose.yml and restart the server.`, 8000);
-        // Don't automatically check status - the backend provider hasn't changed
-        // User needs to restart server for the change to take effect
-        if (elements.llmStatus && elements.llmStatus.style.display !== 'none') {
-            updateServerStatus(elements.llmStatus, 'disconnected', 'Restart server to apply');
+    elements.llmProvider.addEventListener('change', async (e) => {
+        const selectedProvider = e.target.value;
+        const providerName = selectedProvider === 'ollama' ? 'Local (Ollama)' : 'OpenAI';
+        localStorage.setItem('llmProvider', selectedProvider);
+        
+        // Check what provider is actually running on the backend
+        try {
+            const response = await fetch(`${CONFIG.API_BASE}/llm/provider`);
+            if (response.ok) {
+                const data = await response.json();
+                const actualProvider = data.provider || 'ollama';
+                
+                // If user selected a different provider than what's running, show accurate status
+                if (selectedProvider !== actualProvider) {
+                    const actualProviderName = actualProvider === 'ollama' ? 'Local (Ollama)' : 'OpenAI';
+                    showToast('warning', `${providerName} is not available. Backend is currently using ${actualProviderName}. To switch, set LLM_PROVIDER=${selectedProvider} in .env or docker-compose.yml and restart the server.`, 10000);
+                    updateServerStatus(elements.llmStatus, 'disconnected', `${providerName} Not Available`);
+                    // Sync selector back to actual provider
+                    elements.llmProvider.value = actualProvider;
+                    localStorage.setItem('llmProvider', actualProvider);
+                    return;
+                }
+                
+                // Provider matches - check if it's actually working
+                if (elements.llmStatus && elements.llmStatus.style.display !== 'none') {
+                    await checkLlmStatus();
+                }
+            } else {
+                // If we can't check backend, just show warning
+                showToast('warning', `LLM provider selector changed to ${providerName}. Note: The backend provider is set at server startup. To actually switch providers, set LLM_PROVIDER=${selectedProvider} in .env or docker-compose.yml and restart the server.`, 8000);
+                if (elements.llmStatus && elements.llmStatus.style.display !== 'none') {
+                    updateServerStatus(elements.llmStatus, 'disconnected', 'Restart server to apply');
+                }
+            }
+        } catch (error) {
+            console.warn('[Main] Failed to check backend provider:', error);
+            showToast('warning', `LLM provider selector changed to ${providerName}. Note: The backend provider is set at server startup. To actually switch providers, set LLM_PROVIDER=${selectedProvider} in .env or docker-compose.yml and restart the server.`, 8000);
+            if (elements.llmStatus && elements.llmStatus.style.display !== 'none') {
+                updateServerStatus(elements.llmStatus, 'disconnected', 'Restart server to apply');
+            }
         }
     });
 }
@@ -469,9 +500,19 @@ async function checkLlmStatus(retries = 2) {
                 const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
                 const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}`;
                 
+                // Check for specific error messages
+                let statusMessage = `${providerName} Not Ready`;
+                if (errorMsg.includes('quota exceeded') || errorMsg.includes('insufficient_quota')) {
+                    statusMessage = `${providerName} Quota Exceeded`;
+                } else if (errorMsg.includes('API key') || errorMsg.includes('authentication')) {
+                    statusMessage = `${providerName} Auth Error`;
+                } else if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
+                    statusMessage = `${providerName} Not Available`;
+                }
+                
                 // Don't retry on client errors (4xx)
                 if (response.status >= 400 && response.status < 500) {
-                    updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                    updateServerStatus(llmStatus, 'disconnected', statusMessage);
                     return;
                 }
                 
@@ -479,14 +520,21 @@ async function checkLlmStatus(retries = 2) {
             }
         } catch (error) {
             console.warn('[Main] LLM status check failed:', error);
+            let statusMessage = `${providerName} Not Ready`;
+            
             if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                // Timeout might mean LLM is slow but working - show as "checking" or "slow"
-                updateServerStatus(llmStatus, 'disconnected', `${providerName} Slow/Timeout`);
+                statusMessage = `${providerName} Slow/Timeout`;
             } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.message?.includes('Cannot connect')) {
-                updateServerStatus(llmStatus, 'disconnected', `${providerName} Connection Error`);
-            } else {
-                updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                statusMessage = `${providerName} Connection Error`;
+            } else if (error.message?.includes('quota exceeded') || error.message?.includes('insufficient_quota')) {
+                statusMessage = `${providerName} Quota Exceeded`;
+            } else if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+                statusMessage = `${providerName} Auth Error`;
+            } else if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+                statusMessage = `${providerName} Not Available`;
             }
+            
+            updateServerStatus(llmStatus, 'disconnected', statusMessage);
             return;
         }
     } else {
@@ -520,9 +568,19 @@ async function checkLlmStatus(retries = 2) {
                     const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
                     const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}`;
                     
+                    // Check for specific error messages
+                    let statusMessage = `${providerName} Not Ready`;
+                    if (errorMsg.includes('quota exceeded') || errorMsg.includes('insufficient_quota')) {
+                        statusMessage = `${providerName} Quota Exceeded`;
+                    } else if (errorMsg.includes('API key') || errorMsg.includes('authentication')) {
+                        statusMessage = `${providerName} Auth Error`;
+                    } else if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
+                        statusMessage = `${providerName} Not Available`;
+                    }
+                    
                     // Don't retry on client errors (4xx)
                     if (response.status >= 400 && response.status < 500) {
-                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                        updateServerStatus(llmStatus, 'disconnected', statusMessage);
                         return;
                     }
                     
@@ -539,13 +597,21 @@ async function checkLlmStatus(retries = 2) {
                 // If this is the last attempt, show error
                 if (attempt === retries) {
                     console.warn('[Main] LLM status check failed after retries:', error);
+                    let statusMessage = `${providerName} Not Ready`;
+                    
                     if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Timeout`);
+                        statusMessage = `${providerName} Timeout`;
                     } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.message?.includes('Cannot connect')) {
-                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Connection Error`);
-                    } else {
-                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                        statusMessage = `${providerName} Connection Error`;
+                    } else if (error.message?.includes('quota exceeded') || error.message?.includes('insufficient_quota')) {
+                        statusMessage = `${providerName} Quota Exceeded`;
+                    } else if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+                        statusMessage = `${providerName} Auth Error`;
+                    } else if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+                        statusMessage = `${providerName} Not Available`;
                     }
+                    
+                    updateServerStatus(llmStatus, 'disconnected', statusMessage);
                     return;
                 }
                 

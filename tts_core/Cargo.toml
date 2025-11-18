@@ -11,13 +11,7 @@ num-complex = "0.4"
 image = "0.24"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-png = "0.17"
 base64 = "0.22"
 hound = "3"
 dashmap = "5.5"
-
-
-# Additional dependencies for streaming audio and mel frames
-async-stream = "0.3"
-futures-core = "0.3"
 anyhow = "1.0"

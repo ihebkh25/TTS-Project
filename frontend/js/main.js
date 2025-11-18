@@ -382,13 +382,26 @@ async function checkLlmStatus(retries = 2) {
     // Update status to checking
     updateServerStatus(llmStatus, 'disconnected', 'Checking LLM...');
     
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    // For Ollama, try to check model availability directly (faster)
+    if (provider === 'ollama') {
         try {
-            // Try a simple chat request to test LLM availability
-            // Use a minimal test message
-            const testMessage = 'test';
-            const timeout = attempt === 0 ? 5000 : 8000; // Longer timeout on retries
+            // Try to check Ollama model availability via backend health or direct check
+            // First, try a quick health check to see if server is up
+            const healthResponse = await fetch(`${CONFIG.API_BASE}/health`, {
+                method: 'GET',
+                signal: AbortSignal.timeout(3000)
+            });
             
+            if (!healthResponse.ok) {
+                updateServerStatus(llmStatus, 'disconnected', `${providerName} Server Down`);
+                return;
+            }
+            
+            // Server is up, now check LLM with a longer timeout
+            // Use configured LLM timeout but cap at 30 seconds for status check
+            const timeout = Math.min(CONFIG.REQUEST.LLM_TIMEOUT || 30000, 30000);
+            
+            const testMessage = 'hi';
             const response = await fetch(`${CONFIG.API_BASE}/chat`, {
                 method: 'POST',
                 headers: {
@@ -417,31 +430,83 @@ async function checkLlmStatus(retries = 2) {
                     return;
                 }
                 
-                // Retry on server errors (5xx) or network errors
-                if (attempt < retries) {
-                    console.warn(`[Main] LLM status check attempt ${attempt + 1} failed:`, errorMsg);
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
-                    continue;
-                }
-                
                 throw new Error(errorMsg);
             }
         } catch (error) {
-            // If this is the last attempt, show error
-            if (attempt === retries) {
-                console.warn('[Main] LLM status check failed after retries:', error);
-                if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                    updateServerStatus(llmStatus, 'disconnected', `${providerName} Timeout`);
-                } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.message?.includes('Cannot connect')) {
-                    updateServerStatus(llmStatus, 'disconnected', `${providerName} Connection Error`);
-                } else {
-                    updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
-                }
-                return;
+            console.warn('[Main] LLM status check failed:', error);
+            if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                // Timeout might mean LLM is slow but working - show as "checking" or "slow"
+                updateServerStatus(llmStatus, 'disconnected', `${providerName} Slow/Timeout`);
+            } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.message?.includes('Cannot connect')) {
+                updateServerStatus(llmStatus, 'disconnected', `${providerName} Connection Error`);
+            } else {
+                updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
             }
-            
-            // Wait before retry (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            return;
+        }
+    } else {
+        // For OpenAI or other providers, use the original logic with longer timeout
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const testMessage = 'test';
+                // Use configured timeout, increasing on retries
+                const baseTimeout = Math.min(CONFIG.REQUEST.LLM_TIMEOUT || 30000, 30000);
+                const timeout = attempt === 0 ? baseTimeout : baseTimeout * 1.5;
+                
+                const response = await fetch(`${CONFIG.API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: testMessage }),
+                    signal: AbortSignal.timeout(timeout)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    // Check if we got a valid response
+                    if (data.reply !== undefined || data.conversation_id !== undefined) {
+                        updateServerStatus(llmStatus, 'connected', `${providerName} Ready`);
+                        return;
+                    } else {
+                        throw new Error('Invalid response format');
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}`;
+                    
+                    // Don't retry on client errors (4xx)
+                    if (response.status >= 400 && response.status < 500) {
+                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                        return;
+                    }
+                    
+                    // Retry on server errors (5xx) or network errors
+                    if (attempt < retries) {
+                        console.warn(`[Main] LLM status check attempt ${attempt + 1} failed:`, errorMsg);
+                        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+                        continue;
+                    }
+                    
+                    throw new Error(errorMsg);
+                }
+            } catch (error) {
+                // If this is the last attempt, show error
+                if (attempt === retries) {
+                    console.warn('[Main] LLM status check failed after retries:', error);
+                    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Timeout`);
+                    } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.message?.includes('Cannot connect')) {
+                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Connection Error`);
+                    } else {
+                        updateServerStatus(llmStatus, 'disconnected', `${providerName} Not Ready`);
+                    }
+                    return;
+                }
+                
+                // Wait before retry (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            }
         }
     }
 }

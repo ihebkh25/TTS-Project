@@ -256,6 +256,7 @@
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    position: relative;
 }
 
 .tts-send-btn:hover:not(:disabled) {
@@ -264,8 +265,9 @@
 }
 
 .tts-send-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.7;
     cursor: not-allowed;
+    background: var(--primary);
 }
 
 .tts-send-btn .send-icon {
@@ -275,6 +277,43 @@
 
 .tts-send-btn .btn-text {
     display: none; /* Hide text on desktop, show icon only */
+}
+
+/* Loading spinner animation for send button */
+.tts-send-btn .btn-spinner {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.tts-send-btn .btn-spinner.hidden {
+    display: none;
+}
+
+/* Pulse animation for sending state */
+.tts-send-btn:disabled {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 0.7;
+        box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+    }
+    50% {
+        opacity: 1;
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0);
+    }
 }
 
 /* Voice controls (like dictation mode) */

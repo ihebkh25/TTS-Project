@@ -89,8 +89,8 @@ export function setButtonState(button, disabled, text) {
     const btnSpinner = button.querySelector('.btn-spinner');
     const sendIcon = button.querySelector('.send-icon');
     
-    // For chat button, keep icon visible, hide text
-    if (button.id === 'chatBtn') {
+    // For chat and TTS buttons, keep icon visible, hide text, show spinner when disabled
+    if (button.id === 'chatBtn' || button.id === 'ttsBtn') {
         if (btnSpinner) {
             if (disabled) {
                 btnSpinner.classList.remove('hidden');

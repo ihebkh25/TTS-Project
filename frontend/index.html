@@ -6,8 +6,6 @@
     <title>TTS Project</title>
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/tts.css">
-    <link rel="stylesheet" href="css/chat.css">
-    <link rel="stylesheet" href="css/voice-chat.css">
     <link rel="stylesheet" href="css/server.css">
 </head>
 <body>
@@ -19,8 +17,6 @@
         <h2 class="logo">TTS</h2>
         <nav class="nav">
             <button class="tab-btn active" data-tab="tts">Text-to-Speech</button>
-            <button class="tab-btn" data-tab="chat">AI Chat</button>
-            <button class="tab-btn" data-tab="voice-chat">Voice Mode</button>
             <button class="tab-btn" data-tab="server">Server Info</button>
         </nav>
     </aside>
@@ -39,16 +35,6 @@
                     </div>
                 </div>
                 <div class="header-controls">
-                    <div class="llm-provider-selector" style="display: none;">
-                        <label for="llmProvider">LLM Provider:</label>
-                        <select id="llmProvider" class="provider-select">
-                            <option value="ollama" selected>Local (Ollama)</option>
-                        </select>
-                    </div>
-                    <div class="status-badge" id="llmStatus" style="display: none;">
-                        <span class="status-dot"></span>
-                        <span>Checking...</span>
-                    </div>
                 </div>
             </div>
         </header>

@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{Request, State, WebSocketUpgrade},
+    extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -9,14 +9,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer};
 use tracing::{error, info, warn};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use llm_core::{LlmClient, LlmProvider};
 
 mod error;
 mod validation;
@@ -24,18 +22,16 @@ mod config;
 mod metrics;
 
 use crate::error::ApiError;
-use crate::validation::{validate_chat_request, validate_conversation_id, validate_tts_request};
+use crate::validation::validate_tts_request;
 use crate::config::ServerConfig;
 use crate::metrics::AppMetrics;
 
 #[derive(Clone)]
 pub struct AppState {
     pub tts: Arc<tts_core::TtsManager>,
-    pub llm: Arc<LlmClient>, // No mutex needed - client is async and thread-safe
     pub request_count: Arc<AtomicU64>,
     pub config: ServerConfig,
     pub metrics: AppMetrics,
-    pub llm_provider: LlmProvider, // Store the provider type for API queries
 }
 
 #[derive(Deserialize)]
@@ -66,21 +62,6 @@ pub struct VoiceInfo {
     quality: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct ChatRequest {
-    message: String,
-    conversation_id: Option<String>,
-    language: Option<String>, // For TTS language selection
-}
-
-#[derive(Serialize)]
-pub struct ChatResponse {
-    reply: String,
-    conversation_id: String,
-    audio_base64: Option<String>, // Audio for bot response
-    sample_rate: Option<u32>,
-    duration_ms: Option<u64>,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -97,27 +78,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn async_main() -> anyhow::Result<()> {
-    info!("Starting TTS/LLM server...");
-
-    // Always use Ollama as the LLM provider
-    let provider = LlmProvider::Ollama;
-    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "llama3".into());
-
-    let llm = if let Ok(url) = std::env::var("QDRANT_URL") {
-        if !url.trim().is_empty() {
-            info!("Initializing LLM with Qdrant at {}", url);
-            Arc::new(LlmClient::with_storage(provider.clone(), &model, None).await?)
-        } else {
-            info!("QDRANT_URL empty, using LLM without storage");
-            Arc::new(LlmClient::new(provider.clone(), &model).await?)
-        }
-    } else {
-        info!("No QDRANT_URL set, using LLM without storage");
-        Arc::new(LlmClient::new(provider.clone(), &model).await?)
-    };
-    
-    // Start model keep-alive (if needed)
-    llm.start_keep_alive();
+    info!("Starting TTS server...");
 
     info!("Loading TTS models...");
     let tts = Arc::new(
@@ -145,14 +106,12 @@ async fn async_main() -> anyhow::Result<()> {
     
     let state = AppState { 
         tts, 
-        llm,
         request_count: Arc::new(AtomicU64::new(0)),
         config: config.clone(),
         metrics: AppMetrics::new(),
-        llm_provider: provider.clone(), // Store provider type
     };
-    info!("Server configuration loaded: port={}, rate_limit={}/min, llm_timeout={}s", 
-        config.port, config.rate_limit_per_minute, config.llm_timeout_secs);
+    info!("Server configuration loaded: port={}, rate_limit={}/min", 
+        config.port, config.rate_limit_per_minute);
     
     // CORS configuration - environment-aware
     let cors = if let Some(ref allowed_origins) = config.cors_allowed_origins {
@@ -231,13 +190,9 @@ async fn async_main() -> anyhow::Result<()> {
     let public_api = Router::new()
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
-        .route("/llm/provider", get(llm_provider_endpoint))
         .route("/voices", get(list_voices))
         .route("/voices/detail", get(list_voices_detail))
-        .route("/tts", post(tts_endpoint))
-        .route("/chat", post(chat_endpoint))
-        .route("/voice-chat", post(voice_chat_endpoint))
-        .route("/ws/chat/stream", get(chat_stream_ws));
+        .route("/tts", post(tts_endpoint));
     
     // Metrics endpoints - consider adding authentication in production
     let metrics_api = Router::new()
@@ -268,21 +223,6 @@ async fn async_main() -> anyhow::Result<()> {
 
 pub async fn health_check() -> &'static str {
     "ok"
-}
-
-#[derive(Serialize)]
-pub struct LlmProviderResponse {
-    pub provider: String,
-    pub model: String,
-}
-
-pub async fn llm_provider_endpoint(_state: State<AppState>) -> Json<LlmProviderResponse> {
-    let provider_str = "ollama";
-    let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "llama3".into());
-    Json(LlmProviderResponse {
-        provider: provider_str.to_string(),
-        model,
-    })
 }
 
 #[derive(Serialize)]
@@ -352,7 +292,7 @@ pub async fn metrics_endpoint(State(state): State<AppState>) -> Json<MetricsResp
 
 /// Enhanced metrics endpoint with detailed per-endpoint and component metrics
 pub async fn detailed_metrics_endpoint(State(state): State<AppState>) -> Json<crate::metrics::DetailedMetricsResponse> {
-    use crate::metrics::{DetailedMetricsResponse, SystemMetrics, EndpointMetricsResponse, EndpointStats, TtsMetricsResponse, LlmMetricsResponse};
+    use crate::metrics::{DetailedMetricsResponse, SystemMetrics, EndpointMetricsResponse, EndpointStats, TtsMetricsResponse};
     use chrono::Utc;
     
     let mut system = sysinfo::System::new();
@@ -409,26 +349,6 @@ pub async fn detailed_metrics_endpoint(State(state): State<AppState>) -> Json<cr
                 p95_latency_ms: state.metrics.tts.p95_latency_ms(),
                 p99_latency_ms: state.metrics.tts.p99_latency_ms(),
             },
-            chat: EndpointStats {
-                request_count: state.metrics.chat.request_count.load(Ordering::Relaxed),
-                error_count: state.metrics.chat.error_count.load(Ordering::Relaxed),
-                avg_latency_ms: state.metrics.chat.avg_latency_ms(),
-                min_latency_ms: state.metrics.chat.min_latency_ms.load(Ordering::Relaxed),
-                max_latency_ms: state.metrics.chat.max_latency_ms.load(Ordering::Relaxed),
-                p50_latency_ms: state.metrics.chat.p50_latency_ms(),
-                p95_latency_ms: state.metrics.chat.p95_latency_ms(),
-                p99_latency_ms: state.metrics.chat.p99_latency_ms(),
-            },
-            voice_chat: EndpointStats {
-                request_count: state.metrics.voice_chat.request_count.load(Ordering::Relaxed),
-                error_count: state.metrics.voice_chat.error_count.load(Ordering::Relaxed),
-                avg_latency_ms: state.metrics.voice_chat.avg_latency_ms(),
-                min_latency_ms: state.metrics.voice_chat.min_latency_ms.load(Ordering::Relaxed),
-                max_latency_ms: state.metrics.voice_chat.max_latency_ms.load(Ordering::Relaxed),
-                p50_latency_ms: state.metrics.voice_chat.p50_latency_ms(),
-                p95_latency_ms: state.metrics.voice_chat.p95_latency_ms(),
-                p99_latency_ms: state.metrics.voice_chat.p99_latency_ms(),
-            },
         },
         tts: TtsMetricsResponse {
             synthesis_count: state.metrics.tts_specific.synthesis_count.load(Ordering::Relaxed),
@@ -437,14 +357,6 @@ pub async fn detailed_metrics_endpoint(State(state): State<AppState>) -> Json<cr
             cache_misses: state.metrics.tts_specific.cache_misses.load(Ordering::Relaxed),
             cache_hit_rate: state.metrics.tts_specific.cache_hit_rate(),
             total_samples: state.metrics.tts_specific.total_samples.load(Ordering::Relaxed),
-        },
-        llm: LlmMetricsResponse {
-            request_count: state.metrics.llm_specific.request_count.load(Ordering::Relaxed),
-            total_tokens: state.metrics.llm_specific.total_tokens.load(Ordering::Relaxed),
-            avg_tokens_per_request: state.metrics.llm_specific.avg_tokens_per_request(),
-            avg_response_time_ms: state.metrics.llm_specific.avg_response_time_ms(),
-            error_count: state.metrics.llm_specific.error_count.load(Ordering::Relaxed),
-            timeout_count: state.metrics.llm_specific.timeout_count.load(Ordering::Relaxed),
         },
     })
 }
@@ -530,459 +442,6 @@ pub async fn tts_endpoint(
     }))
 }
 
-pub async fn chat_endpoint(
-    State(state): State<AppState>,
-    Json(req): Json<ChatRequest>,
-) -> Result<Json<ChatResponse>, ApiError> {
-    state.request_count.fetch_add(1, Ordering::Relaxed);
-    let start_time = std::time::Instant::now();
-    
-    validate_chat_request(&req.message)?;
-    if let Some(ref id) = req.conversation_id {
-        validate_conversation_id(id)?;
-    }
-
-    let message = req.message.clone();
-    let conv_id = req.conversation_id.clone();
-    let llm = state.llm.clone();
-    let language = req.language.clone();
-
-    info!("Chat request received: message length={}, conv_id={:?}", message.len(), conv_id);
-
-    // Run LLM async with timeout (no blocking needed - fully async now)
-    let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let result = tokio::time::timeout(
-        state.config.llm_timeout(),
-        llm.chat_with_history(Some(conv_id.clone()), &message)
-    )
-    .await;
-
-    let reply = match result {
-        Ok(Ok(reply)) => reply,
-        Ok(Err(e)) => {
-            state.metrics.chat.record_error();
-            state.metrics.llm_specific.record_error();
-            error!("LLM error: {}", e);
-            return Err(ApiError::LlmError(format!("LLM error: {e}")));
-        }
-        Err(_) => {
-            let timeout_secs = state.config.llm_timeout().as_secs();
-            state.metrics.chat.record_error();
-            state.metrics.llm_specific.record_timeout();
-            error!("LLM request timed out after {} seconds", timeout_secs);
-            return Err(ApiError::LlmError(format!(
-                "Request timed out after {} seconds. Please try again with a shorter message.",
-                timeout_secs
-            )));
-        }
-    };
-
-    let total_latency_ms = start_time.elapsed().as_millis() as u64;
-    
-    // Record metrics
-    state.metrics.chat.record_request(total_latency_ms);
-    state.metrics.llm_specific.record_request(total_latency_ms, reply.len());
-    
-    info!("LLM response received in {:.2}s, reply length={}", total_latency_ms as f64 / 1000.0, reply.len());
-
-    // Return text immediately - TTS generation moved to background for speed
-    // This ensures response time is only limited by LLM, not TTS
-    let response = ChatResponse {
-        reply: reply.clone(),
-        conversation_id: conv_id.clone(),
-        audio_base64: None,
-        sample_rate: None,
-        duration_ms: None,
-    };
-
-    // Generate TTS in background (completely non-blocking)
-    if let Some(lang) = language {
-        let tts_state = state.tts.clone();
-        // Clean text for natural TTS speech with pauses and prosody
-        let reply_for_tts = clean_text_for_tts(&reply);
-        tokio::spawn(async move {
-            let _ = tokio::task::spawn_blocking(move || {
-                if let Ok((samples, sr)) = tts_state.synthesize_with_sample_rate(&reply_for_tts, Some(&lang), None, None) {
-                    let _ = tts_core::TtsManager::encode_wav_base64(&samples, sr);
-                    // Audio generated in background - frontend can request via /tts if needed
-                }
-            }).await;
-        });
-    }
-
-    Ok(Json(response))
-}
-
-#[derive(Deserialize)]
-pub struct VoiceChatRequest {
-    message: String,
-    conversation_id: Option<String>,
-    language: Option<String>,
-    voice: Option<String>, // voice ID (e.g., "norman", "thorsten")
-}
-
-#[derive(Serialize)]
-pub struct VoiceChatResponse {
-    audio_base64: String,
-    sample_rate: u32,
-    duration_ms: u64,
-    conversation_id: String,
-    reply: String, // Original reply for display
-    cleaned_text: String, // Cleaned text that was actually spoken
-}
-
-pub async fn voice_chat_endpoint(
-    State(state): State<AppState>,
-    Json(req): Json<VoiceChatRequest>,
-) -> Result<Json<VoiceChatResponse>, ApiError> {
-    state.request_count.fetch_add(1, Ordering::Relaxed);
-    let start_time = std::time::Instant::now();
-    validate_chat_request(&req.message)?;
-    if let Some(ref id) = req.conversation_id {
-        validate_conversation_id(id)?;
-    }
-
-    let message = req.message.clone();
-    let conv_id = req.conversation_id.clone();
-    let llm = state.llm.clone();
-    // Default to en_US if available, otherwise de_DE
-    let default_lang = if state.tts.list_languages().contains(&"en_US".to_string()) {
-        "en_US"
-    } else {
-        "de_DE"
-    };
-    let language = req.language.clone().unwrap_or_else(|| default_lang.to_string());
-
-    // Get LLM response with timeout (fully async now)
-    let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let result = tokio::time::timeout(
-        state.config.llm_timeout(),
-        llm.chat_with_history(Some(conv_id.clone()), &message)
-    )
-    .await;
-
-    let reply = match result {
-        Ok(Ok(reply)) => reply,
-        Ok(Err(e)) => {
-            state.metrics.voice_chat.record_error();
-            state.metrics.llm_specific.record_error();
-            error!("LLM error: {}", e);
-            return Err(ApiError::LlmError(format!("LLM error: {e}")));
-        }
-        Err(_) => {
-            let timeout_secs = state.config.llm_timeout().as_secs();
-            state.metrics.voice_chat.record_error();
-            state.metrics.llm_specific.record_timeout();
-            error!("LLM request timed out after {} seconds", timeout_secs);
-            return Err(ApiError::LlmError(format!(
-                "Request timed out after {} seconds. Please try again with a shorter message.",
-                timeout_secs
-            )));
-        }
-    };
-
-    // Clean text for natural TTS speech
-    let cleaned_reply = clean_text_for_tts(&reply);
-    
-    // Generate TTS audio (required for voice chat) - use caching
-    let voice_id = req.voice.as_deref();
-    let tts = state.tts.clone();
-    
-    let tts_start = std::time::Instant::now();
-    let (audio_base64, sample_rate, duration_ms, cache_hit) = tts
-        .synthesize_with_cache(
-            &cleaned_reply,
-            Some(&language),
-            voice_id
-        )
-        .await
-        .map_err(|e| {
-            state.metrics.voice_chat.record_error();
-            ApiError::TtsError(e)
-        })?;
-
-    let tts_time_ms = tts_start.elapsed().as_millis() as u64;
-    let total_latency_ms = start_time.elapsed().as_millis() as u64;
-    
-    // Record metrics with cache hit tracking
-    state.metrics.voice_chat.record_request(total_latency_ms);
-    state.metrics.llm_specific.record_request(total_latency_ms, reply.len());
-    state.metrics.tts_specific.record_synthesis(tts_time_ms, 0, cache_hit); // samples not needed for cached responses
-
-    Ok(Json(VoiceChatResponse {
-        audio_base64,
-        sample_rate,
-        duration_ms,
-        conversation_id: conv_id,
-        reply: reply.clone(),
-        cleaned_text: cleaned_reply,
-    }))
-}
-
-/// WebSocket endpoint for streaming chat (LLM + TTS)
-/// Accepts query parameters: message, conversation_id (optional), language (optional)
-pub async fn chat_stream_ws(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-    let message = params.get("message").cloned().unwrap_or_default();
-    let conversation_id = params.get("conversation_id").cloned();
-    let language = params.get("language").cloned();
-    
-    if message.is_empty() {
-        return ws.on_upgrade(move |mut socket| async move {
-            use axum::extract::ws::Message;
-            let error_msg = serde_json::json!({ "error": "Message parameter is required", "code": 400 });
-            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
-        });
-    }
-    
-    if let Err(e) = validate_chat_request(&message) {
-        return ws.on_upgrade(move |mut socket| async move {
-            use axum::extract::ws::Message;
-            let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
-            let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
-        });
-    }
-    
-    if let Some(ref id) = conversation_id {
-        if let Err(e) = validate_conversation_id(id) {
-            return ws.on_upgrade(move |mut socket| async move {
-                use axum::extract::ws::Message;
-                let error_msg = serde_json::json!({ "error": format!("{e}"), "code": 400 });
-                let _ = socket.send(Message::Text(error_msg.to_string().into())).await;
-            });
-        }
-    }
-
-    ws.on_upgrade(move |socket| async move {
-        use axum::extract::ws::Message;
-        use futures_util::{SinkExt as _, StreamExt as _};
-        
-        // Split socket into sender and receiver
-        let (mut sender, _receiver) = socket.split();
-        
-        // Send initial status
-        let _ = sender.send(Message::Text(
-            serde_json::json!({ 
-                "type": "status", 
-                "status": "streaming", 
-                "message": "Starting LLM stream..." 
-            }).to_string().into()
-        )).await;
-        
-        // Get LLM client and create stream
-        let llm = state.llm.clone();
-        let message_clone = message.clone();
-        let conv_id_clone = conversation_id.clone();
-        
-        // Create channel for LLM tokens
-        let (token_stream_tx, mut token_stream_rx) = mpsc::channel::<Result<String, String>>(100);
-        let token_stream_tx_clone = token_stream_tx.clone();
-        
-        // Spawn task to handle LLM streaming (fully async, no lock needed)
-        tokio::spawn(async move {
-            // Create stream directly (no mutex needed - client is async and thread-safe)
-            let mut stream = llm.chat_with_history_stream(conv_id_clone, &message_clone);
-            
-            // Consume stream and forward tokens
-            use futures_util::StreamExt as _;
-            while let Some(result) = stream.next().await {
-                if token_stream_tx_clone.send(result.map_err(|e| e.to_string())).await.is_err() {
-                    break; // Receiver dropped
-                }
-            }
-        });
-        
-        // Create channel for TTS audio chunks
-        let (tts_tx, mut tts_rx) = mpsc::channel::<Result<(String, u32), String>>(10);
-        let tts_tx_clone = tts_tx.clone();
-        
-        // Stream tokens and optionally generate TTS
-        let mut full_text = String::new();
-        let mut accumulated_text = String::new();
-        let tts_state = state.tts.clone();
-        let lang = language.clone().unwrap_or_else(|| "en_US".to_string());
-        
-        // Buffer for TTS generation (generate TTS for chunks of text)
-        const TTS_CHUNK_SIZE: usize = 50; // Generate TTS every ~50 characters
-        
-        // Track if LLM stream is complete
-        let mut llm_complete = false;
-        let mut pending_tts_tasks = 0u32;
-        
-        // Use select to handle both LLM tokens and TTS chunks
-        loop {
-            tokio::select! {
-                // Handle LLM tokens
-                token_result = token_stream_rx.recv(), if !llm_complete => {
-                    match token_result {
-                        Some(Ok(token)) => {
-                            full_text.push_str(&token);
-                            accumulated_text.push_str(&token);
-                            
-                            // Send token to client
-                            if let Err(e) = sender.send(Message::Text(
-                                serde_json::json!({
-                                    "type": "token",
-                                    "token": token.clone(),
-                                    "text": full_text.clone()
-                                }).to_string().into()
-                            )).await {
-                                warn!("Failed to send token: {}", e);
-                                break;
-                            }
-                            
-                            // Generate TTS chunk if we have enough text
-                            if accumulated_text.len() >= TTS_CHUNK_SIZE {
-                                let text_for_tts = accumulated_text.clone();
-                                accumulated_text.clear();
-                                
-                                // Generate TTS in background
-                                let tts_state_clone = tts_state.clone();
-                                let lang_clone = lang.clone();
-                                let tts_tx_for_task = tts_tx_clone.clone();
-                                // Clean text for natural TTS speech with pauses and prosody
-                                let text_for_tts_cleaned = clean_text_for_tts(&text_for_tts);
-                                
-                                pending_tts_tasks += 1;
-                                tokio::spawn(async move {
-                                    let (samples, sample_rate) = match tokio::task::spawn_blocking(move || {
-                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts_cleaned, Some(&lang_clone), None, None)
-                                    }).await {
-                                        Ok(Ok(result)) => result,
-                                        Ok(Err(e)) => {
-                                            let _ = tts_tx_for_task.send(Err(format!("TTS error: {}", e))).await;
-                                            return;
-                                        }
-                                        Err(e) => {
-                                            let _ = tts_tx_for_task.send(Err(format!("Task error: {}", e))).await;
-                                            return;
-                                        }
-                                    };
-                                    
-                                    // Convert to base64 WAV
-                                    match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
-                                        Ok(audio_base64) => {
-                                            let _ = tts_tx_for_task.send(Ok((audio_base64, sample_rate))).await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tts_tx_for_task.send(Err(format!("WAV encoding error: {}", e))).await;
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                        Some(Err(e)) => {
-                            let err_msg = serde_json::json!({ "error": format!("Stream error: {e}"), "code": 500 });
-                            let _ = sender.send(Message::Text(err_msg.to_string().into())).await;
-                            break;
-                        }
-                        None => {
-                            // LLM stream complete - generate TTS for remaining text
-                            llm_complete = true;
-                            if !accumulated_text.is_empty() {
-                                let text_for_tts = accumulated_text.clone();
-                                accumulated_text.clear();
-                                // Clean text for natural TTS speech with pauses and prosody
-                                let text_for_tts_cleaned = clean_text_for_tts(&text_for_tts);
-                                pending_tts_tasks += 1;
-                                
-                                let tts_state_final = tts_state.clone();
-                                let lang_final = lang.clone();
-                                let tts_tx_final = tts_tx_clone.clone();
-                                
-                                tokio::spawn(async move {
-                                    match tokio::task::spawn_blocking(move || {
-                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts_cleaned, Some(&lang_final), None, None)
-                                    }).await {
-                                        Ok(Ok((samples, sample_rate))) => {
-                                            match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
-                                                Ok(audio_base64) => {
-                                                    let _ = tts_tx_final.send(Ok((audio_base64, sample_rate))).await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tts_tx_final.send(Err(format!("WAV encoding error: {}", e))).await;
-                                                }
-                                            }
-                                        }
-                                        Ok(Err(e)) => {
-                                            let _ = tts_tx_final.send(Err(format!("TTS error: {}", e))).await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tts_tx_final.send(Err(format!("Task error: {}", e))).await;
-                                        }
-                                    }
-                                });
-                            }
-                            
-                            // If no pending TTS tasks, we can break
-                            if pending_tts_tasks == 0 {
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                // Handle TTS chunks
-                tts_result = tts_rx.recv() => {
-                    match tts_result {
-                        Some(Ok((audio_base64, sample_rate))) => {
-                            if pending_tts_tasks > 0 {
-                                pending_tts_tasks -= 1;
-                            }
-                            
-                            if let Err(e) = sender.send(Message::Text(
-                                serde_json::json!({
-                                    "type": "audio_chunk",
-                                    "audio": audio_base64,
-                                    "sample_rate": sample_rate
-                                }).to_string().into()
-                            )).await {
-                                warn!("Failed to send audio chunk: {}", e);
-                                break;
-                            }
-                            
-                            // If LLM is complete and no more pending tasks, break
-                            if llm_complete && pending_tts_tasks == 0 {
-                                break;
-                            }
-                        }
-                        Some(Err(e)) => {
-                            if pending_tts_tasks > 0 {
-                                pending_tts_tasks -= 1;
-                            }
-                            warn!("TTS error: {}", e);
-                            
-                            // If LLM is complete and no more pending tasks, break
-                            if llm_complete && pending_tts_tasks == 0 {
-                                break;
-                            }
-                        }
-                        None => {
-                            // TTS channel closed - if LLM is also complete, we're done
-                            if llm_complete {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Send completion status
-        let _ = sender.send(Message::Text(
-            serde_json::json!({ 
-                "type": "status", 
-                "status": "complete",
-                "text": full_text
-            }).to_string().into()
-        )).await;
-        
-        let _ = sender.close().await;
-    })
-}
 
 /// Detect emotional tone from text based on punctuation and keywords
 /// Returns a prosody hint (rate, pitch) for more expressive speech

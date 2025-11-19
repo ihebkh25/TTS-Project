@@ -15,9 +15,6 @@ pub enum ApiError {
     #[error("TTS error: {0}")]
     TtsError(#[from] anyhow::Error),
 
-    #[error("LLM error: {0}")]
-    LlmError(String),
-
     #[error("Internal server error: {0}")]
     InternalError(String),
 
@@ -42,10 +39,6 @@ impl IntoResponse for ApiError {
             ApiError::TtsError(e) => {
                 tracing::error!("TTS error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("TTS error: {}", e))
-            }
-            ApiError::LlmError(msg) => {
-                tracing::error!("LLM error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {}", msg);

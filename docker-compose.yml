@@ -1,64 +1,11 @@
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"  # REST
-      - "6334:6334"  # gRPC
-    volumes:
-      - qdrant_storage:/qdrant/storage
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"   # expose so you can use it from host too (optional)
-    volumes:
-      - ollama_data:/root/.ollama
-    environment:
-      # Performance optimizations - aggressive settings
-      - OLLAMA_NUM_PARALLEL=2  # Reduced parallel requests (was 4) to save memory
-      - OLLAMA_MAX_LOADED_MODELS=1  # Keep only one model loaded
-      - OLLAMA_NUM_GPU=1  # Use GPU if available
-      - OLLAMA_KEEP_ALIVE=3m  # Unload model after 3 minutes of inactivity (was 5m)
-      - OLLAMA_NUM_THREAD=4  # Limit CPU threads
-    deploy:
-      resources:
-        limits:
-          memory: 7G  # Limit memory usage
-        reservations:
-          memory: 4G  # Reserve minimum memory
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   tts-server:
     build: .
     ports:
       - "8085:8085"
-    depends_on:
-      qdrant:
-        condition: service_started
-      ollama:
-        condition: service_healthy
     environment:
       - PORT=8085
       - RUST_LOG=info
-      # LLM Provider: Always uses Ollama (local)
-      - LLM_MODEL=${LLM_MODEL:-llama3}  # Default: llama3
-      - OLLAMA_BASE_URL=http://ollama:11434
-      # Ollama performance optimizations (aggressive settings for lower resource usage)
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-2048}  # Reduced context window (2048 for speed, was 4096)
-      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.5}  # Lower temperature for faster, more focused responses
-      - OLLAMA_TOP_P=${OLLAMA_TOP_P:-0.8}  # More focused responses
-      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-256}  # Shorter responses for speed (was 512)
-      - OLLAMA_TOP_K=${OLLAMA_TOP_K:-20}  # Limit token sampling for speed
-      - OLLAMA_REPEAT_PENALTY=${OLLAMA_REPEAT_PENALTY:-1.1}  # Prevent repetition
-      # Qdrant gRPC URL (important: use 6334)
-      - QDRANT_URL=http://qdrant:6334
     volumes:
       - ./models:/app/models:ro
 
@@ -68,7 +15,3 @@ services:
       - "8082:80"
     depends_on:
       - tts-server
-
-volumes:
-  qdrant_storage:
-  ollama_data:

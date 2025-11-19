@@ -174,84 +174,18 @@ impl Default for TtsMetrics {
     }
 }
 
-/// LLM-specific metrics
-#[derive(Debug, Clone)]
-pub struct LlmMetrics {
-    pub request_count: Arc<AtomicU64>,
-    pub total_tokens: Arc<AtomicU64>,
-    pub total_response_time_ms: Arc<AtomicU64>,
-    pub error_count: Arc<AtomicU64>,
-    pub timeout_count: Arc<AtomicU64>,
-}
-
-impl LlmMetrics {
-    pub fn new() -> Self {
-        Self {
-            request_count: Arc::new(AtomicU64::new(0)),
-            total_tokens: Arc::new(AtomicU64::new(0)),
-            total_response_time_ms: Arc::new(AtomicU64::new(0)),
-            error_count: Arc::new(AtomicU64::new(0)),
-            timeout_count: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    pub fn record_request(&self, response_time_ms: u64, tokens: usize) {
-        self.request_count.fetch_add(1, Ordering::Relaxed);
-        self.total_response_time_ms.fetch_add(response_time_ms, Ordering::Relaxed);
-        self.total_tokens.fetch_add(tokens as u64, Ordering::Relaxed);
-    }
-
-    pub fn record_error(&self) {
-        self.error_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn record_timeout(&self) {
-        self.timeout_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn avg_response_time_ms(&self) -> f64 {
-        let count = self.request_count.load(Ordering::Relaxed);
-        if count == 0 {
-            return 0.0;
-        }
-        let total = self.total_response_time_ms.load(Ordering::Relaxed);
-        total as f64 / count as f64
-    }
-
-    pub fn avg_tokens_per_request(&self) -> f64 {
-        let count = self.request_count.load(Ordering::Relaxed);
-        if count == 0 {
-            return 0.0;
-        }
-        let total = self.total_tokens.load(Ordering::Relaxed);
-        total as f64 / count as f64
-    }
-}
-
-impl Default for LlmMetrics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Comprehensive metrics structure
 #[derive(Debug, Clone)]
 pub struct AppMetrics {
     pub tts: EndpointMetrics,
-    pub chat: EndpointMetrics,
-    pub voice_chat: EndpointMetrics,
     pub tts_specific: TtsMetrics,
-    pub llm_specific: LlmMetrics,
 }
 
 impl AppMetrics {
     pub fn new() -> Self {
         Self {
             tts: EndpointMetrics::new(),
-            chat: EndpointMetrics::new(),
-            voice_chat: EndpointMetrics::new(),
             tts_specific: TtsMetrics::new(),
-            llm_specific: LlmMetrics::new(),
         }
     }
 }
@@ -268,7 +202,6 @@ pub struct DetailedMetricsResponse {
     pub system: SystemMetrics,
     pub endpoints: EndpointMetricsResponse,
     pub tts: TtsMetricsResponse,
-    pub llm: LlmMetricsResponse,
 }
 
 #[derive(Serialize)]
@@ -285,8 +218,6 @@ pub struct SystemMetrics {
 #[derive(Serialize)]
 pub struct EndpointMetricsResponse {
     pub tts: EndpointStats,
-    pub chat: EndpointStats,
-    pub voice_chat: EndpointStats,
 }
 
 #[derive(Serialize)]
@@ -309,15 +240,5 @@ pub struct TtsMetricsResponse {
     pub cache_misses: u64,
     pub cache_hit_rate: f64,
     pub total_samples: u64,
-}
-
-#[derive(Serialize)]
-pub struct LlmMetricsResponse {
-    pub request_count: u64,
-    pub total_tokens: u64,
-    pub avg_tokens_per_request: f64,
-    pub avg_response_time_ms: f64,
-    pub error_count: u64,
-    pub timeout_count: u64,
 }
 

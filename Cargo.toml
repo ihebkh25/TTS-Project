@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "tts_core",
-    "llm_core",
     "server"
 ]
 resolver = "2"

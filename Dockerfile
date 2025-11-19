@@ -21,7 +21,6 @@ RUN apt-get update && \
 # Copy workspace and all crates
 COPY Cargo.toml Cargo.lock ./
 COPY tts_core ./tts_core
-COPY llm_core ./llm_core
 COPY server ./server
 
 # Build release binary

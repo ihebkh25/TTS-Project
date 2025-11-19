@@ -6,7 +6,6 @@ use std::time::Duration;
 pub struct ServerConfig {
     pub port: u16,
     pub rate_limit_per_minute: u32,
-    pub llm_timeout_secs: u64,
     pub request_timeout_secs: u64,
     pub cors_allowed_origins: Option<Vec<String>>,
 }
@@ -16,7 +15,6 @@ impl Default for ServerConfig {
         Self {
             port: 8085,
             rate_limit_per_minute: 60,
-            llm_timeout_secs: 120,
             request_timeout_secs: 60,
             cors_allowed_origins: None,
         }
@@ -35,11 +33,6 @@ impl ServerConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(60);
         
-        let llm_timeout_secs = std::env::var("LLM_TIMEOUT_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(120);
-        
         let request_timeout_secs = std::env::var("REQUEST_TIMEOUT_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -57,7 +50,6 @@ impl ServerConfig {
         Self {
             port,
             rate_limit_per_minute,
-            llm_timeout_secs,
             request_timeout_secs,
             cors_allowed_origins,
         }
@@ -65,10 +57,6 @@ impl ServerConfig {
     
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.request_timeout_secs)
-    }
-    
-    pub fn llm_timeout(&self) -> Duration {
-        Duration::from_secs(self.llm_timeout_secs)
     }
 }
 

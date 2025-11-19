@@ -3496,12 +3496,14 @@ dependencies = [
  "dashmap 5.5.3",
  "hound",
  "image",
+ "lru",
  "mel_spec",
  "ndarray",
  "num-complex",
  "piper-rs",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

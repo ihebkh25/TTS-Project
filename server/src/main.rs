@@ -128,6 +128,14 @@ async fn async_main() -> anyhow::Result<()> {
             }),
     );
     info!("Loaded {} TTS voices", tts.list_languages().len());
+    
+    // Preload frequently used models (en_US, de_DE)
+    info!("Preloading frequently used TTS models...");
+    if let Err(e) = tts.preload_models(&["en_US", "de_DE"]) {
+        warn!("Failed to preload some TTS models: {e}");
+    } else {
+        info!("TTS models preloaded successfully");
+    }
 
     // Initialize start time for uptime calculation
     let _ = START_TIME.get_or_init(|| std::time::Instant::now());
@@ -489,54 +497,30 @@ pub async fn tts_endpoint(
     let start_time = std::time::Instant::now();
     validate_tts_request(&req.text, req.language.as_deref())?;
 
-    // Use spawn_blocking to avoid blocking async runtime
     let tts = state.tts.clone();
     let text = req.text.clone();
     let language = req.language.clone();
-    let speaker = req.speaker;
     let voice = req.voice.clone();
     
+    // Use new async caching method
     let tts_start = std::time::Instant::now();
-    let (samples, sample_rate) = tokio::task::spawn_blocking(move || {
-        tts.synthesize_with_sample_rate(&text, language.as_deref(), speaker, voice.as_deref())
-    })
-    .await
-    .map_err(|e| {
-        state.metrics.tts.record_error();
-        ApiError::InternalError(format!("Task join error: {e}"))
-    })?
-    .map_err(|e| {
-        state.metrics.tts.record_error();
-        ApiError::TtsError(e)
-    })?;
+    let (audio_base64, sample_rate, duration_ms, cache_hit) = tts
+        .synthesize_with_cache(&text, language.as_deref(), voice.as_deref())
+        .await
+        .map_err(|e| {
+            state.metrics.tts.record_error();
+            ApiError::TtsError(e)
+        })?;
 
     let tts_time_ms = tts_start.elapsed().as_millis() as u64;
-    let sample_rate_f32 = sample_rate as f32;
-
-    // Encode WAV in blocking task as well
-    let samples_clone = samples.clone();
-    let audio_base64 = tokio::task::spawn_blocking(move || {
-        tts_core::TtsManager::encode_wav_base64(&samples_clone, sample_rate)
-    })
-    .await
-    .map_err(|e| {
-        state.metrics.tts.record_error();
-        ApiError::InternalError(format!("Task join error: {e}"))
-    })?
-    .map_err(|e| {
-        state.metrics.tts.record_error();
-        ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}"))
-    })?;
-
-    let duration_ms = (samples.len() as f32 / sample_rate_f32 * 1000.0) as u64;
     let latency_ms = start_time.elapsed().as_millis() as u64;
     
-    // Record metrics
+    // Record metrics with cache hit tracking
     state.metrics.tts.record_request(latency_ms);
-    state.metrics.tts_specific.record_synthesis(tts_time_ms, samples.len(), false); // TODO: track cache hits
+    state.metrics.tts_specific.record_synthesis(tts_time_ms, 0, cache_hit); // samples not needed for cached responses
     
-    info!("TTS request completed in {}ms, duration: {}ms, samples: {}", 
-          latency_ms, duration_ms, samples.len());
+    info!("TTS request completed in {}ms (synthesis: {}ms), duration: {}ms, cache_hit: {}", 
+          latency_ms, tts_time_ms, duration_ms, cache_hit);
 
     Ok(Json(TtsResponse {
         audio_base64,
@@ -698,57 +682,30 @@ pub async fn voice_chat_endpoint(
     // Clean text for natural TTS speech
     let cleaned_reply = clean_text_for_tts(&reply);
     
-    // Generate TTS audio (required for voice chat) - use spawn_blocking
+    // Generate TTS audio (required for voice chat) - use caching
     let voice_id = req.voice.as_deref();
     let tts = state.tts.clone();
-    let cleaned_reply_clone = cleaned_reply.clone();
-    let language_clone = language.clone();
-    let voice_id_clone = voice_id.map(|s| s.to_string());
     
     let tts_start = std::time::Instant::now();
-    let (samples, sample_rate) = tokio::task::spawn_blocking(move || {
-        tts.synthesize_with_sample_rate(
-            &cleaned_reply_clone, 
-            Some(&language_clone), 
-            None, 
-            voice_id_clone.as_deref()
+    let (audio_base64, sample_rate, duration_ms, cache_hit) = tts
+        .synthesize_with_cache(
+            &cleaned_reply,
+            Some(&language),
+            voice_id
         )
-    })
-    .await
-    .map_err(|e| {
-        state.metrics.voice_chat.record_error();
-        ApiError::InternalError(format!("Task join error: {e}"))
-    })?
-    .map_err(|e| {
-        state.metrics.voice_chat.record_error();
-        ApiError::TtsError(e)
-    })?;
+        .await
+        .map_err(|e| {
+            state.metrics.voice_chat.record_error();
+            ApiError::TtsError(e)
+        })?;
 
     let tts_time_ms = tts_start.elapsed().as_millis() as u64;
-    let sample_rate_f32 = sample_rate as f32;
-    let duration_ms = (samples.len() as f32 / sample_rate_f32 * 1000.0) as u64;
-
-    // Encode WAV in blocking task
-    let samples_clone = samples.clone();
-    let audio_base64 = tokio::task::spawn_blocking(move || {
-        tts_core::TtsManager::encode_wav_base64(&samples_clone, sample_rate)
-    })
-    .await
-    .map_err(|e| {
-        state.metrics.voice_chat.record_error();
-        ApiError::InternalError(format!("Task join error: {e}"))
-    })?
-    .map_err(|e| {
-        state.metrics.voice_chat.record_error();
-        ApiError::TtsError(anyhow::anyhow!("WAV encoding error: {e}"))
-    })?;
-
     let total_latency_ms = start_time.elapsed().as_millis() as u64;
     
-    // Record metrics
+    // Record metrics with cache hit tracking
     state.metrics.voice_chat.record_request(total_latency_ms);
     state.metrics.llm_specific.record_request(total_latency_ms, reply.len());
-    state.metrics.tts_specific.record_synthesis(tts_time_ms, samples.len(), false); // TODO: track cache hits
+    state.metrics.tts_specific.record_synthesis(tts_time_ms, 0, cache_hit); // samples not needed for cached responses
 
     Ok(Json(VoiceChatResponse {
         audio_base64,

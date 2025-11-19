@@ -1,7 +1,7 @@
 mod wav;
 mod melspec;
 
-use std::{collections::HashMap, fs, path::Path, sync::{Arc, Mutex}};
+use std::{collections::HashMap, fs, path::Path, sync::{Arc, RwLock}, hash::{Hash, Hasher}, collections::hash_map::DefaultHasher, time::Instant};
 
 use anyhow::Context;
 use base64::Engine; // for STANDARD.encode()
@@ -14,6 +14,9 @@ use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use piper_rs::synth::{PiperSpeechStreamParallel, PiperSpeechSynthesizer};
 use dashmap::DashMap;
+use lru::LruCache;
+use tokio::sync::RwLock as TokioRwLock;
+use tokio::time::Duration;
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,8 +27,9 @@ pub struct MapEntry {
 
 // Cached synthesizer and sample rate
 struct CachedSynth {
-    synth: Arc<Mutex<PiperSpeechSynthesizer>>,
+    synth: Arc<RwLock<PiperSpeechSynthesizer>>, // Changed from Mutex to RwLock for parallel reads
     sample_rate: u32,
+    last_accessed: Instant, // Track access time for LRU
 }
 
 // Manual Debug implementation since PiperSpeechSynthesizer doesn't implement Debug
@@ -34,8 +38,18 @@ impl std::fmt::Debug for CachedSynth {
         f.debug_struct("CachedSynth")
             .field("synth", &"<PiperSpeechSynthesizer>")
             .field("sample_rate", &self.sample_rate)
+            .field("last_accessed", &self.last_accessed)
             .finish()
     }
+}
+
+// Cached audio response
+#[derive(Clone)]
+struct CachedResponse {
+    audio_base64: String,
+    sample_rate: u32,
+    duration_ms: u64,
+    cached_at: Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,7 +61,7 @@ pub struct VoiceEntry {
     pub quality: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TtsManager {
     // language key -> (default voice, voices map)
     // For backwards compatibility: language key -> (config path, default speaker)
@@ -59,6 +73,10 @@ pub struct TtsManager {
     cache: Arc<DashMap<String, CachedSynth>>,
     // LRU cache wrapper to limit cache size
     max_cache_size: usize,
+    // Response cache: (text + language + voice) -> CachedResponse
+    // Using TokioRwLock for async access
+    response_cache: Arc<TokioRwLock<LruCache<u64, CachedResponse>>>,
+    response_cache_ttl: Duration,
 }
 
 impl TtsManager {
@@ -69,6 +87,8 @@ impl TtsManager {
             voices_map: HashMap::new(),
             cache: Arc::new(DashMap::new()),
             max_cache_size: 10, // Default: cache up to 10 models
+            response_cache: Arc::new(TokioRwLock::new(LruCache::new(std::num::NonZeroUsize::new(300).unwrap()))),
+            response_cache_ttl: Duration::from_secs(3600), // 1 hour TTL
         }
     }
     
@@ -79,6 +99,8 @@ impl TtsManager {
             voices_map: HashMap::new(),
             cache: Arc::new(DashMap::new()),
             max_cache_size,
+            response_cache: Arc::new(TokioRwLock::new(LruCache::new(std::num::NonZeroUsize::new(300).unwrap()))),
+            response_cache_ttl: Duration::from_secs(3600), // 1 hour TTL
         }
     }
 
@@ -173,6 +195,8 @@ impl TtsManager {
             voices_map,
             cache: Arc::new(DashMap::new()),
             max_cache_size: 10, // Default: cache up to 10 models
+            response_cache: Arc::new(TokioRwLock::new(LruCache::new(std::num::NonZeroUsize::new(300).unwrap()))),
+            response_cache_ttl: Duration::from_secs(3600), // 1 hour TTL
         })
     }
 
@@ -254,11 +278,12 @@ impl TtsManager {
     pub fn get_or_create_synth<P: AsRef<Path>>(
         &self,
         cfg_path: P,
-    ) -> anyhow::Result<(Arc<Mutex<PiperSpeechSynthesizer>>, u32)> {
+    ) -> anyhow::Result<(Arc<RwLock<PiperSpeechSynthesizer>>, u32)> {
         let cfg_path_str = cfg_path.as_ref().to_string_lossy().to_string();
         
         // Check cache first (DashMap allows concurrent reads without blocking)
-        if let Some(cached) = self.cache.get(&cfg_path_str) {
+        if let Some(mut cached) = self.cache.get_mut(&cfg_path_str) {
+            cached.last_accessed = Instant::now();
             return Ok((cached.synth.clone(), cached.sample_rate));
         }
         
@@ -269,21 +294,28 @@ impl TtsManager {
         let synth = PiperSpeechSynthesizer::new(model)?;
         
         // Cache it with LRU eviction if needed
-        let synth_arc = Arc::new(Mutex::new(synth));
+        let synth_arc = Arc::new(RwLock::new(synth));
         let cached = CachedSynth { 
             synth: synth_arc.clone(), 
-            sample_rate 
+            sample_rate,
+            last_accessed: Instant::now(),
         };
         
-        // If cache is full, remove least recently used entry
-        // Note: DashMap doesn't have built-in LRU, so we use a simple size-based eviction
-        // For true LRU, we'd need a wrapper, but this is a good compromise for performance
+        // If cache is full, remove least recently used entry (true LRU)
         if self.cache.len() >= self.max_cache_size {
-            // Remove a random entry (simple eviction strategy)
-            // In production, you might want to track access order
-            if let Some(entry) = self.cache.iter().next() {
-                let key_to_remove = entry.key().clone();
-                self.cache.remove(&key_to_remove);
+            let mut oldest_key: Option<String> = None;
+            let mut oldest_time = Instant::now();
+            
+            // Find least recently used entry
+            for entry in self.cache.iter() {
+                if entry.last_accessed < oldest_time {
+                    oldest_time = entry.last_accessed;
+                    oldest_key = Some(entry.key().clone());
+                }
+            }
+            
+            if let Some(key) = oldest_key {
+                self.cache.remove(&key);
             }
         }
         
@@ -320,6 +352,15 @@ impl TtsManager {
         Ok(sample_rate)
     }
 
+    /// Generate cache key for response cache
+    fn cache_key(text: &str, lang_opt: Option<&str>, voice_opt: Option<&str>) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        lang_opt.hash(&mut hasher);
+        voice_opt.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Legacy helper kept for compatibility (uses default speaker)
     pub fn synthesize_blocking(&self, text: &str, lang_opt: Option<&str>) -> anyhow::Result<Vec<f32>> {
         self.synthesize_with(text, lang_opt, None, None)
@@ -337,7 +378,7 @@ impl TtsManager {
 
         // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
-        let synth = synth_arc.lock().unwrap();
+        let synth = synth_arc.read().unwrap(); // Changed to read lock for parallel access
 
         // In your piper-rs version, pass None (no public speaker selection)
         let iter: PiperSpeechStreamParallel = synth
@@ -370,7 +411,7 @@ impl TtsManager {
 
         // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
-        let synth = synth_arc.lock().unwrap();
+        let synth = synth_arc.read().unwrap(); // Changed to read lock for parallel access
 
         // In your piper-rs version, pass None (no public speaker selection)
         let iter: PiperSpeechStreamParallel = synth
@@ -385,6 +426,101 @@ impl TtsManager {
             );
         }
         Ok((samples, sample_rate))
+    }
+
+    /// Synthesize with caching - async version for response cache
+    pub async fn synthesize_with_cache(
+        &self,
+        text: &str,
+        lang_opt: Option<&str>,
+        voice_opt: Option<&str>,
+    ) -> anyhow::Result<(String, u32, u64, bool)> {
+        // Check response cache first
+        let cache_key = Self::cache_key(text, lang_opt, voice_opt);
+        {
+            let cache = self.response_cache.read().await;
+            if let Some(cached) = cache.peek(&cache_key) {
+                // Check if cache entry is still valid (not expired)
+                if Instant::now().duration_since(cached.cached_at) < self.response_cache_ttl {
+                    return Ok((
+                        cached.audio_base64.clone(),
+                        cached.sample_rate,
+                        cached.duration_ms,
+                        true, // cache hit
+                    ));
+                }
+            }
+        }
+
+        // Cache miss - synthesize (blocking operation in async context)
+        // Clone only the data we need, not the entire manager with async types
+        let text = text.to_string();
+        let lang_opt = lang_opt.map(|s| s.to_string());
+        let voice_opt = voice_opt.map(|s| s.to_string());
+        
+        // Clone the manager's data structures needed for synthesis
+        let map = self.map.clone();
+        let voices_map = self.voices_map.clone();
+        let cache = Arc::clone(&self.cache);
+        let max_cache_size = self.max_cache_size;
+        
+        let (samples, sample_rate) = tokio::task::spawn_blocking(move || {
+            // Create a temporary manager for blocking synthesis
+            // This avoids cloning async types (TokioRwLock)
+            let temp_manager = TtsManager {
+                map,
+                voices_map,
+                cache,
+                max_cache_size,
+                response_cache: Arc::new(TokioRwLock::new(LruCache::new(std::num::NonZeroUsize::new(1).unwrap()))), // Dummy cache, not used
+                response_cache_ttl: Duration::from_secs(3600), // Dummy, not used
+            };
+            temp_manager.synthesize_with_sample_rate(
+                &text,
+                lang_opt.as_deref(),
+                None,
+                voice_opt.as_deref()
+            )
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Task join error: {e}"))??;
+        
+        let sample_rate_f32 = sample_rate as f32;
+        let duration_ms = (samples.len() as f32 / sample_rate_f32 * 1000.0) as u64;
+
+        // Encode to WAV base64 (clone samples for move into blocking task)
+        let samples_for_encode = samples.clone();
+        let sample_rate_for_encode = sample_rate;
+        let audio_base64 = tokio::task::spawn_blocking(move || {
+            Self::encode_wav_base64(&samples_for_encode, sample_rate_for_encode)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Task join error: {e}"))??;
+
+        // Cache the result
+        let cached_response = CachedResponse {
+            audio_base64: audio_base64.clone(),
+            sample_rate,
+            duration_ms,
+            cached_at: Instant::now(),
+        };
+
+        {
+            let mut cache = self.response_cache.write().await;
+            cache.put(cache_key, cached_response);
+        }
+
+        Ok((audio_base64, sample_rate, duration_ms, false)) // cache miss
+    }
+
+    /// Preload frequently used models
+    pub fn preload_models(&self, languages: &[&str]) -> anyhow::Result<()> {
+        for lang in languages {
+            if let Ok((cfg_path, _)) = self.config_for(Some(lang), None) {
+                let _ = self.get_or_create_synth(&cfg_path)?;
+            }
+        }
+        Ok(())
     }
 
 

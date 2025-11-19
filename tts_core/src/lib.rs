@@ -382,7 +382,9 @@ impl TtsManager {
 
         // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
-        let synth = synth_arc.read().unwrap(); // Changed to read lock for parallel access
+        // Use map_err to handle lock poisoning gracefully instead of panicking
+        let synth = synth_arc.read()
+            .map_err(|_| anyhow::anyhow!("Synthesizer lock poisoned - this indicates a previous panic. Please restart the server."))?;
 
         // In your piper-rs version, pass None (no public speaker selection)
         let iter: PiperSpeechStreamParallel = synth
@@ -415,7 +417,9 @@ impl TtsManager {
 
         // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
-        let synth = synth_arc.read().unwrap(); // Changed to read lock for parallel access
+        // Use map_err to handle lock poisoning gracefully instead of panicking
+        let synth = synth_arc.read()
+            .map_err(|_| anyhow::anyhow!("Synthesizer lock poisoned - this indicates a previous panic. Please restart the server."))?;
 
         // In your piper-rs version, pass None (no public speaker selection)
         let iter: PiperSpeechStreamParallel = synth
@@ -630,9 +634,12 @@ impl TtsManager {
             let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
             use image::ImageEncoder;
             // Provide raw grayscale buffer and ColorType::L8
-            encoder
-                .write_image(img.as_raw(), width, height, image::ColorType::L8)
-                .expect("PNG encode failed");
+            // Use unwrap_or_else to maintain String return type while handling errors gracefully
+            if let Err(e) = encoder.write_image(img.as_raw(), width, height, image::ColorType::L8) {
+                // Log error but return empty string instead of panicking
+                eprintln!("PNG encode failed: {}", e);
+                return String::new();
+            }
         }
 
         base64::engine::general_purpose::STANDARD.encode(png_bytes)

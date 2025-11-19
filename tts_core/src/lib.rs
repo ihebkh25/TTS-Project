@@ -410,30 +410,175 @@ impl TtsManager {
         _speaker_override: Option<i64>, // kept for future use
         voice_opt: Option<&str>, // voice ID (e.g., "norman", "thorsten")
     ) -> anyhow::Result<(Vec<f32>, u32)> {
+        // Use enhanced synthesis with pauses for more natural speech
+        self.synthesize_with_pauses(text, lang_opt, voice_opt)
+    }
+
+    /// Synthesize text with natural pauses at commas and sentence endings
+    /// Splits text at punctuation, synthesizes chunks separately, and inserts silence
+    fn synthesize_with_pauses(
+        &self,
+        text: &str,
+        lang_opt: Option<&str>,
+        voice_opt: Option<&str>,
+    ) -> anyhow::Result<(Vec<f32>, u32)> {
         let (cfg_path, _default_speaker) = self.config_for(lang_opt, voice_opt)?;
-
-        // Sample rate from cache
         let sample_rate = self.get_sample_rate(&cfg_path)?;
-
-        // Get or create cached synthesizer
         let (synth_arc, _) = self.get_or_create_synth(&cfg_path)?;
-        // Use map_err to handle lock poisoning gracefully instead of panicking
         let synth = synth_arc.read()
             .map_err(|_| anyhow::anyhow!("Synthesizer lock poisoned - this indicates a previous panic. Please restart the server."))?;
 
-        // In your piper-rs version, pass None (no public speaker selection)
-        let iter: PiperSpeechStreamParallel = synth
-            .synthesize_parallel(text.to_string(), None)
-            .map_err(|e| anyhow::anyhow!("piper synth error: {e}"))?;
-
-        let mut samples: Vec<f32> = Vec::new();
-        for part in iter {
-            samples.extend(
-                part.map_err(|e| anyhow::anyhow!("chunk error: {e}"))?
-                    .into_vec(),
-            );
+        // Split text into chunks at punctuation for natural pauses
+        let chunks = Self::split_text_with_pauses(text);
+        
+        if chunks.is_empty() {
+            return Ok((Vec::new(), sample_rate));
         }
-        Ok((samples, sample_rate))
+
+        let mut all_samples: Vec<f32> = Vec::new();
+        
+        // Synthesize each chunk separately and add pauses between them
+        for (i, chunk) in chunks.iter().enumerate() {
+            let chunk = chunk.trim();
+            if chunk.is_empty() {
+                continue;
+            }
+
+            // Synthesize this chunk
+            let iter: PiperSpeechStreamParallel = synth
+                .synthesize_parallel(chunk.to_string(), None)
+                .map_err(|e| anyhow::anyhow!("piper synth error: {e}"))?;
+
+            let mut chunk_samples: Vec<f32> = Vec::new();
+            for part in iter {
+                chunk_samples.extend(
+                    part.map_err(|e| anyhow::anyhow!("chunk error: {e}"))?
+                        .into_vec(),
+                );
+            }
+
+            // Add chunk audio
+            all_samples.extend(chunk_samples);
+
+            // Add pause after chunk (except for the last chunk)
+            if i < chunks.len() - 1 {
+                let pause_duration_ms = Self::get_pause_duration(&chunks[i]);
+                let pause_samples = (pause_duration_ms as f32 / 1000.0 * sample_rate as f32) as usize;
+                all_samples.extend(vec![0.0; pause_samples]);
+            }
+        }
+
+        Ok((all_samples, sample_rate))
+    }
+
+    /// Split text into chunks at punctuation marks for natural pauses
+    fn split_text_with_pauses(text: &str) -> Vec<String> {
+        let mut chunks = Vec::new();
+        let mut current_chunk = String::new();
+        let chars: Vec<char> = text.chars().collect();
+        
+        let mut i = 0;
+        while i < chars.len() {
+            current_chunk.push(chars[i]);
+            
+            // Check if this is a punctuation mark that should trigger a pause
+            match chars[i] {
+                // Sentence endings: longer pause
+                '.' | '!' | '?' => {
+                    // Check if this is an abbreviation (e.g., "Dr.", "Mr.", "etc.")
+                    let is_abbrev = if i >= 2 && i + 1 < chars.len() && chars[i + 1] != ' ' {
+                        let start = i.saturating_sub(3);
+                        let end = (i + 1).min(chars.len());
+                        let context: String = chars[start..end].iter().collect();
+                        context.ends_with("Dr.") || context.ends_with("Mr.") || 
+                        context.ends_with("Mrs.") || context.ends_with("Ms.") ||
+                        context.ends_with("Prof.") || context.ends_with("etc.") ||
+                        context.ends_with("vs.") || context.ends_with("e.g.") ||
+                        context.ends_with("i.e.") || context.ends_with("a.m.") ||
+                        context.ends_with("p.m.") || context.ends_with("Inc.") ||
+                        context.ends_with("Ltd.") || context.ends_with("Corp.")
+                    } else {
+                        false
+                    };
+                    
+                    if !is_abbrev {
+                        // Include following space if present
+                        if i + 1 < chars.len() && chars[i + 1] == ' ' {
+                            current_chunk.push(chars[i + 1]);
+                            i += 1;
+                        }
+                        chunks.push(current_chunk.clone());
+                        current_chunk.clear();
+                    }
+                }
+                // Commas: short pause
+                // Skip commas in numbers (e.g., "1,000" or "3,14" for European decimal)
+                ',' => {
+                    // Check if comma is in a number context (digit before and after)
+                    let is_number_comma = if i > 0 && i + 1 < chars.len() {
+                        let prev_char = chars[i - 1];
+                        let next_char = chars[i + 1];
+                        (prev_char.is_ascii_digit() && next_char.is_ascii_digit()) ||
+                        (prev_char.is_whitespace() && i > 1 && chars[i - 2].is_ascii_digit())
+                    } else {
+                        false
+                    };
+                    
+                    if !is_number_comma {
+                        // Include following space if present
+                        if i + 1 < chars.len() && chars[i + 1] == ' ' {
+                            current_chunk.push(chars[i + 1]);
+                            i += 1;
+                        }
+                        chunks.push(current_chunk.clone());
+                        current_chunk.clear();
+                    }
+                }
+                // Semicolons and colons: medium pause
+                ';' | ':' => {
+                    // Include following space if present
+                    if i + 1 < chars.len() && chars[i + 1] == ' ' {
+                        current_chunk.push(chars[i + 1]);
+                        i += 1;
+                    }
+                    chunks.push(current_chunk.clone());
+                    current_chunk.clear();
+                }
+                _ => {}
+            }
+            
+            i += 1;
+        }
+        
+        // Add remaining chunk
+        if !current_chunk.trim().is_empty() {
+            chunks.push(current_chunk);
+        }
+        
+        // If no punctuation found, return original text as single chunk
+        if chunks.is_empty() {
+            chunks.push(text.to_string());
+        }
+        
+        chunks
+    }
+
+    /// Get pause duration in milliseconds based on the chunk's ending punctuation
+    fn get_pause_duration(chunk: &str) -> u32 {
+        let trimmed = chunk.trim_end();
+        if trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?') {
+            // Sentence endings: 300-500ms pause
+            400
+        } else if trimmed.ends_with(';') || trimmed.ends_with(':') {
+            // Semicolons and colons: 200-300ms pause
+            250
+        } else if trimmed.ends_with(',') {
+            // Commas: 100-200ms pause
+            150
+        } else {
+            // Default: 100ms
+            100
+        }
     }
 
     /// Synthesize with caching - async version for response cache

@@ -498,7 +498,8 @@ pub async fn tts_endpoint(
     validate_tts_request(&req.text, req.language.as_deref())?;
 
     let tts = state.tts.clone();
-    let text = req.text.clone();
+    // Clean text for natural TTS speech with pauses and prosody
+    let text = clean_text_for_tts(&req.text);
     let language = req.language.clone();
     let voice = req.voice.clone();
     
@@ -597,7 +598,8 @@ pub async fn chat_endpoint(
     // Generate TTS in background (completely non-blocking)
     if let Some(lang) = language {
         let tts_state = state.tts.clone();
-        let reply_for_tts = reply;
+        // Clean text for natural TTS speech with pauses and prosody
+        let reply_for_tts = clean_text_for_tts(&reply);
         tokio::spawn(async move {
             let _ = tokio::task::spawn_blocking(move || {
                 if let Ok((samples, sr)) = tts_state.synthesize_with_sample_rate(&reply_for_tts, Some(&lang), None, None) {
@@ -841,11 +843,13 @@ pub async fn chat_stream_ws(
                                 let tts_state_clone = tts_state.clone();
                                 let lang_clone = lang.clone();
                                 let tts_tx_for_task = tts_tx_clone.clone();
+                                // Clean text for natural TTS speech with pauses and prosody
+                                let text_for_tts_cleaned = clean_text_for_tts(&text_for_tts);
                                 
                                 pending_tts_tasks += 1;
                                 tokio::spawn(async move {
                                     let (samples, sample_rate) = match tokio::task::spawn_blocking(move || {
-                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts, Some(&lang_clone), None, None)
+                                        tts_state_clone.synthesize_with_sample_rate(&text_for_tts_cleaned, Some(&lang_clone), None, None)
                                     }).await {
                                         Ok(Ok(result)) => result,
                                         Ok(Err(e)) => {
@@ -881,6 +885,8 @@ pub async fn chat_stream_ws(
                             if !accumulated_text.is_empty() {
                                 let text_for_tts = accumulated_text.clone();
                                 accumulated_text.clear();
+                                // Clean text for natural TTS speech with pauses and prosody
+                                let text_for_tts_cleaned = clean_text_for_tts(&text_for_tts);
                                 pending_tts_tasks += 1;
                                 
                                 let tts_state_final = tts_state.clone();
@@ -889,7 +895,7 @@ pub async fn chat_stream_ws(
                                 
                                 tokio::spawn(async move {
                                     match tokio::task::spawn_blocking(move || {
-                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts, Some(&lang_final), None, None)
+                                        tts_state_final.synthesize_with_sample_rate(&text_for_tts_cleaned, Some(&lang_final), None, None)
                                     }).await {
                                         Ok(Ok((samples, sample_rate))) => {
                                             match tts_core::TtsManager::encode_wav_base64(&samples, sample_rate) {
@@ -978,8 +984,44 @@ pub async fn chat_stream_ws(
     })
 }
 
+/// Detect emotional tone from text based on punctuation and keywords
+/// Returns a prosody hint (rate, pitch) for more expressive speech
+fn detect_emotion(text: &str) -> (f32, f32) {
+    let text_lower = text.to_lowercase();
+    
+    // Excitement indicators (exclamation marks, exciting words)
+    let has_excitement = text.contains('!') || 
+        text_lower.contains("amazing") || text_lower.contains("wonderful") || 
+        text_lower.contains("fantastic") || text_lower.contains("incredible") ||
+        text_lower.contains("excellent") || text_lower.contains("great");
+    
+    // Question indicators (questions typically have rising intonation)
+    let is_question = text.trim_end().ends_with('?');
+    
+    // Sadness/concern indicators
+    let has_concern = text_lower.contains("sorry") || text_lower.contains("unfortunately") ||
+        text_lower.contains("problem") || text_lower.contains("issue") ||
+        text_lower.contains("difficult") || text_lower.contains("challenge");
+    
+    // Adjust prosody based on emotion
+    if has_excitement {
+        // Slightly faster, higher pitch for excitement
+        (1.05, 1.1)
+    } else if is_question {
+        // Normal speed, slightly higher pitch for questions (rising intonation)
+        (1.0, 1.05)
+    } else if has_concern {
+        // Slightly slower, lower pitch for concern
+        (0.95, 0.95)
+    } else {
+        // Neutral prosody
+        (1.0, 1.0)
+    }
+}
+
 /// Clean text for natural TTS speech
 /// Removes markdown, special formatting, and converts text to be more natural for speech
+/// Enhanced with pause markers for commas and sentence endings for all languages
 fn clean_text_for_tts(text: &str) -> String {
     let mut cleaned = text.to_string();
     
@@ -1096,28 +1138,82 @@ fn clean_text_for_tts(text: &str) -> String {
     cleaned = cleaned.replace(" ;", ";");
     cleaned = cleaned.replace(" :", ":");
     
-    // Ensure space after punctuation (but not if it's already there or at end of string)
-    // Use a more careful approach to avoid double spaces
+    // Enhanced: Add natural pauses for commas and sentence endings
+    // This helps TTS systems naturally pause at appropriate points for all languages
     let mut result = String::with_capacity(cleaned.len() * 2);
     let chars: Vec<char> = cleaned.chars().collect();
     for i in 0..chars.len() {
         result.push(chars[i]);
-        if matches!(chars[i], ',' | '.' | '!' | '?' | ';' | ':') {
-            // Add space after punctuation if not at end and next char is not whitespace or punctuation
-            if i + 1 < chars.len() {
-                let next_char = chars[i + 1];
-                if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') {
-                    result.push(' ');
+        
+        // Add pause markers after punctuation
+        if i + 1 < chars.len() {
+            let next_char = chars[i + 1];
+            
+            match chars[i] {
+                // Commas: short pause (add extra space for natural pause)
+                ',' if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') => {
+                    result.push_str("  "); // Double space for short pause hint
+                }
+                // Semicolons: medium pause
+                ';' if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') => {
+                    result.push_str("   "); // Triple space for medium pause
+                }
+                // Colons: medium pause
+                ':' if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') => {
+                    result.push_str("   "); // Triple space for medium pause
+                }
+                // Sentence endings: longer pause (period, exclamation, question)
+                '.' | '!' | '?' if !next_char.is_whitespace() && !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') => {
+                    // Check if this is an abbreviation (e.g., "Dr.", "Mr.", "etc.")
+                    let is_abbrev = if i >= 2 {
+                        let prev_chars = &chars[i.saturating_sub(3)..=i];
+                        let prev_str: String = prev_chars.iter().collect();
+                        prev_str.ends_with("Dr.") || prev_str.ends_with("Mr.") || 
+                        prev_str.ends_with("Mrs.") || prev_str.ends_with("Ms.") ||
+                        prev_str.ends_with("Prof.") || prev_str.ends_with("etc.") ||
+                        prev_str.ends_with("vs.") || prev_str.ends_with("e.g.") ||
+                        prev_str.ends_with("i.e.") || prev_str.ends_with("a.m.") ||
+                        prev_str.ends_with("p.m.")
+                    } else {
+                        false
+                    };
+                    
+                    if !is_abbrev {
+                        result.push_str("    "); // Quadruple space for longer sentence-ending pause
+                    } else {
+                        result.push(' '); // Just single space for abbreviations
+                    }
+                }
+                _ => {
+                    // Ensure space after punctuation if needed
+                    if matches!(chars[i], ',' | '.' | '!' | '?' | ';' | ':') && 
+                       !next_char.is_whitespace() && 
+                       !matches!(next_char, ',' | '.' | '!' | '?' | ';' | ':' | ')') {
+                        result.push(' ');
+                    }
                 }
             }
         }
     }
     cleaned = result;
     
-    // Clean up double spaces that might have been created
-    while cleaned.contains("  ") {
-        cleaned = cleaned.replace("  ", " ");
+    // Clean up excessive spaces (more than 4 consecutive spaces) but keep pause hints
+    // This normalizes while preserving intentional pauses
+    let mut result = String::with_capacity(cleaned.len());
+    let mut space_count = 0;
+    for ch in cleaned.chars() {
+        if ch == ' ' {
+            space_count += 1;
+            // Keep up to 4 spaces (for sentence endings), normalize beyond that
+            if space_count <= 4 {
+                result.push(ch);
+            }
+        } else {
+            space_count = 0;
+            result.push(ch);
+        }
     }
+    cleaned = result;
     
     // Remove leading/trailing whitespace
     cleaned = cleaned.trim().to_string();

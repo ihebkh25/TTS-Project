@@ -15,6 +15,12 @@ models/**/*.onnx.json
 # IDE and OS files
 .DS_Store
 .env
+.env.*
+*.env
+*.env.bak
+*.env.bak*
+.env.bak
+.env.bak2
 .idea
 **/.DS_Store
 

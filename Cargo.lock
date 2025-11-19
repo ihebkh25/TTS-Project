@@ -1068,6 +1068,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1569,13 +1575,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-stream",
+ "async-trait",
  "chrono",
  "futures",
+ "hex",
+ "lru",
  "qdrant-client",
  "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tokio-stream",
  "uuid",
@@ -1595,6 +1605,15 @@ name = "log"
 version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+
+[[package]]
+name = "lru"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+dependencies = [
+ "hashbrown 0.15.5",
+]
 
 [[package]]
 name = "lru-slab"
@@ -3050,7 +3069,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]

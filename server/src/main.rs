@@ -31,7 +31,7 @@ use crate::metrics::AppMetrics;
 #[derive(Clone)]
 pub struct AppState {
     pub tts: Arc<tts_core::TtsManager>,
-    pub llm: Arc<std::sync::Mutex<LlmClient>>,
+    pub llm: Arc<LlmClient>, // No mutex needed - client is async and thread-safe
     pub request_count: Arc<AtomicU64>,
     pub config: ServerConfig,
     pub metrics: AppMetrics,
@@ -106,15 +106,18 @@ async fn async_main() -> anyhow::Result<()> {
     let llm = if let Ok(url) = std::env::var("QDRANT_URL") {
         if !url.trim().is_empty() {
             info!("Initializing LLM with Qdrant at {}", url);
-            Arc::new(std::sync::Mutex::new(LlmClient::with_storage(provider.clone(), &model, None).await?))
+            Arc::new(LlmClient::with_storage(provider.clone(), &model, None).await?)
         } else {
             info!("QDRANT_URL empty, using LLM without storage");
-            Arc::new(std::sync::Mutex::new(LlmClient::new(provider.clone(), &model)?))
+            Arc::new(LlmClient::new(provider.clone(), &model).await?)
         }
     } else {
         info!("No QDRANT_URL set, using LLM without storage");
-        Arc::new(std::sync::Mutex::new(LlmClient::new(provider.clone(), &model)?))
+        Arc::new(LlmClient::new(provider.clone(), &model).await?)
     };
+    
+    // Start model keep-alive (if needed)
+    llm.start_keep_alive();
 
     info!("Loading TTS models...");
     let tts = Arc::new(
@@ -561,42 +564,21 @@ pub async fn chat_endpoint(
 
     info!("Chat request received: message length={}, conv_id={:?}", message.len(), conv_id);
 
-    // Run LLM in blocking task with timeout
-    // Using spawn_blocking to avoid blocking the async runtime
+    // Run LLM async with timeout (no blocking needed - fully async now)
+    let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let result = tokio::time::timeout(
         state.config.llm_timeout(),
-        tokio::task::spawn_blocking({
-            let llm = llm.clone();
-            let message = message.clone();
-            let conv_id = conv_id.clone();
-            move || {
-                let llm = llm.lock().unwrap_or_else(|poisoned| {
-                    error!("LLM mutex poisoned in chat_endpoint, recovering: {}", poisoned);
-                    poisoned.into_inner()
-                });
-                let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                match llm.chat_with_history(Some(conv_id.clone()), &message) {
-                    Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-                    Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
-                }
-            }
-        })
+        llm.chat_with_history(Some(conv_id.clone()), &message)
     )
     .await;
 
-    let (reply, conv_id) = match result {
-        Ok(Ok(Ok((reply, conv_id)))) => (reply, conv_id),
-        Ok(Ok(Err(join_err))) => {
+    let reply = match result {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(e)) => {
             state.metrics.chat.record_error();
             state.metrics.llm_specific.record_error();
-            error!("Join error in chat task: {join_err}");
-            return Err(ApiError::InternalError(format!("Join error: {join_err}")));
-        }
-        Ok(Err(join_err)) => {
-            state.metrics.chat.record_error();
-            state.metrics.llm_specific.record_error();
-            error!("Task join error: {join_err}");
-            return Err(ApiError::InternalError(format!("Task join error: {join_err}")));
+            error!("LLM error: {}", e);
+            return Err(ApiError::LlmError(format!("LLM error: {e}")));
         }
         Err(_) => {
             let timeout_secs = state.config.llm_timeout().as_secs();
@@ -685,42 +667,21 @@ pub async fn voice_chat_endpoint(
     };
     let language = req.language.clone().unwrap_or_else(|| default_lang.to_string());
 
-    // Get LLM response with timeout
-    // Using spawn_blocking to avoid blocking the async runtime
+    // Get LLM response with timeout (fully async now)
+    let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let result = tokio::time::timeout(
         state.config.llm_timeout(),
-        tokio::task::spawn_blocking({
-            let llm = llm.clone();
-            let message = message.clone();
-            let conv_id = conv_id.clone();
-            move || {
-                let llm = llm.lock().unwrap_or_else(|poisoned| {
-                    error!("LLM mutex poisoned in voice_chat_endpoint, recovering: {}", poisoned);
-                    poisoned.into_inner()
-                });
-                let conv_id = conv_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                match llm.chat_with_history(Some(conv_id.clone()), &message) {
-                    Ok(reply) => Ok::<_, ApiError>((reply, conv_id)),
-                    Err(e) => Err(ApiError::LlmError(format!("LLM error: {e}"))),
-                }
-            }
-        })
+        llm.chat_with_history(Some(conv_id.clone()), &message)
     )
     .await;
 
-    let (reply, conv_id) = match result {
-        Ok(Ok(Ok((reply, conv_id)))) => (reply, conv_id),
-        Ok(Ok(Err(join_err))) => {
+    let reply = match result {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(e)) => {
             state.metrics.voice_chat.record_error();
             state.metrics.llm_specific.record_error();
-            error!("Join error in voice chat task: {join_err}");
-            return Err(ApiError::InternalError(format!("Join error: {join_err}")));
-        }
-        Ok(Err(join_err)) => {
-            state.metrics.voice_chat.record_error();
-            state.metrics.llm_specific.record_error();
-            error!("Task join error: {join_err}");
-            return Err(ApiError::InternalError(format!("Task join error: {join_err}")));
+            error!("LLM error: {}", e);
+            return Err(ApiError::LlmError(format!("LLM error: {e}")));
         }
         Err(_) => {
             let timeout_secs = state.config.llm_timeout().as_secs();
@@ -861,21 +822,10 @@ pub async fn chat_stream_ws(
         let (token_stream_tx, mut token_stream_rx) = mpsc::channel::<Result<String, String>>(100);
         let token_stream_tx_clone = token_stream_tx.clone();
         
-        // Spawn task to handle LLM streaming
-        // We need to create the stream in a way that doesn't hold the lock
-        // The stream uses channels internally, so it should be 'static after creation
+        // Spawn task to handle LLM streaming (fully async, no lock needed)
         tokio::spawn(async move {
-            // Create stream - we need to hold the lock only briefly
-            // The stream itself uses channels and spawned tasks, so it's independent
-            let mut stream = {
-                // Hold lock only to create the stream
-                let llm_guard = llm.lock().unwrap_or_else(|poisoned| {
-                    error!("LLM mutex poisoned in chat_stream_ws, recovering: {}", poisoned);
-                    poisoned.into_inner()
-                });
-                llm_guard.chat_with_history_stream(conv_id_clone, &message_clone)
-            };
-            // Lock is released here - stream should be independent
+            // Create stream directly (no mutex needed - client is async and thread-safe)
+            let mut stream = llm.chat_with_history_stream(conv_id_clone, &message_clone);
             
             // Consume stream and forward tokens
             use futures_util::StreamExt as _;

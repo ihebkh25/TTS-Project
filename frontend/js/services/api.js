@@ -83,7 +83,6 @@ function logApiConfig() {
         console.log('[API Service] Initialized with:', {
             API_BASE: apiBase,
             REQUEST_TIMEOUT: REQUEST?.TIMEOUT,
-            REQUEST_LLM_TIMEOUT: REQUEST?.LLM_TIMEOUT,
             REQUEST_TTS_TIMEOUT: REQUEST?.TTS_TIMEOUT,
             windowLocation: typeof window !== 'undefined' ? window.location.href : 'N/A',
             hostname: typeof window !== 'undefined' ? window.location.hostname : 'N/A',
@@ -279,120 +278,6 @@ export async function generateTTS(text, language, speaker = null, voice = null) 
     }
     
     return data;
-}
-
-/**
- * Send chat message with improved error handling
- */
-export async function sendChatMessage(message, conversationId = null, retries = 1) {
-    const requestBody = { message };
-    if (conversationId) {
-        requestBody.conversation_id = conversationId;
-    }
-    
-    let lastError;
-    
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const response = await fetchWithErrorHandling(`${getApiBase()}/chat`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(REQUEST.LLM_TIMEOUT)
-            });
-            const data = await response.json();
-            
-            // Validate response
-            if (!data || (data.error && !data.reply)) {
-                throw new Error(data.error || 'Invalid response from server');
-            }
-            
-            return data;
-        } catch (error) {
-            lastError = error;
-            
-            // Check if it's a client error (4xx) - don't retry these
-            const isClientError = error.message?.match(/HTTP (4\d{2})/) || 
-                                 error.message?.includes('400') || 
-                                 error.message?.includes('401') || 
-                                 error.message?.includes('403') ||
-                                 error.message?.includes('404');
-            
-            // Don't retry on client errors (4xx) or if it's the last attempt
-            if (isClientError || attempt === retries) {
-                throw error;
-            }
-            
-            // Wait before retry (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-            console.warn(`[API] Chat request attempt ${attempt + 1} failed, retrying...`, error.message);
-        }
-    }
-    
-    throw lastError;
-}
-
-/**
- * Send voice chat message (with audio response) with improved error handling
- * @param {string} message - Message to send
- * @param {string} language - Language code (e.g., "en_US")
- * @param {string|null} conversationId - Conversation ID (optional)
- * @param {string|null} voice - Voice ID (e.g., "norman") (optional)
- * @param {number} retries - Number of retry attempts (default: 1)
- */
-export async function sendVoiceChatMessage(message, language, conversationId = null, voice = null, retries = 1) {
-    const requestBody = { message, language };
-    if (conversationId) {
-        requestBody.conversation_id = conversationId;
-    }
-    if (voice !== null && voice !== undefined) {
-        requestBody.voice = voice;
-    }
-    
-    let lastError;
-    
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const response = await fetchWithErrorHandling(`${getApiBase()}/voice-chat`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(REQUEST.LLM_TIMEOUT)
-            });
-            const data = await response.json();
-            
-            // Validate response
-            if (!data || (data.error && !data.reply && !data.audio_base64)) {
-                throw new Error(data.error || 'Invalid response from server');
-            }
-            
-            return data;
-        } catch (error) {
-            lastError = error;
-            
-            // Check if it's a client error (4xx) - don't retry these
-            const isClientError = error.message?.match(/HTTP (4\d{2})/) || 
-                                 error.message?.includes('400') || 
-                                 error.message?.includes('401') || 
-                                 error.message?.includes('403') ||
-                                 error.message?.includes('404');
-            
-            // Don't retry on client errors (4xx) or if it's the last attempt
-            if (isClientError || attempt === retries) {
-                throw error;
-            }
-            
-            // Wait before retry (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-            console.warn(`[API] Voice chat request attempt ${attempt + 1} failed, retrying...`, error.message);
-        }
-    }
-    
-    throw lastError;
 }
 
 /**

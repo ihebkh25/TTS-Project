@@ -11,8 +11,6 @@ use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use tower::ServiceExt;
 
-use crate::e2e::test_helpers::create_test_app;
-
 #[tokio::test]
 async fn test_tts_websocket_streaming() {
     // Note: This test requires a running server, so it's marked as integration-style
@@ -25,13 +23,6 @@ async fn test_tts_websocket_streaming() {
     // For now, we verify the endpoint exists and handles requests properly
     // Full WebSocket testing should be done with the test_streaming.js script
     // or with a proper test server setup
-}
-
-#[tokio::test]
-async fn test_chat_websocket_streaming_structure() {
-    // Similar to above - WebSocket tests require a running server
-    // The structure is verified through the integration tests
-    // Full e2e WebSocket testing should use test_streaming.js
 }
 
 // Helper function to test WebSocket endpoint (requires server running)

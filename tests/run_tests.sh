@@ -19,7 +19,7 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 echo -e "${YELLOW}📦 Running unit tests...${NC}"
-cargo test --package tts_core --package llm_core --package server --lib || {
+cargo test --package tts_core --package server --lib || {
     echo -e "${RED}❌ Unit tests failed${NC}"
     exit 1
 }

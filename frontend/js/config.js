@@ -117,15 +117,6 @@ export const CONFIG = {
     get API_BASE() { return getApiBaseLazy(); },
     get WS_BASE() { return getWebSocketBaseLazy(); },
     
-    // VAD Configuration
-    VAD: {
-        ENABLED: true,
-        SILENCE_THRESHOLD: 30, // Audio level threshold (0-255)
-        SILENCE_DURATION: 1500, // Milliseconds of silence before auto-send (ms)
-        CHECK_INTERVAL: 100, // How often to check audio levels (ms)
-        MIN_RECORDING_DURATION: 500, // Minimum recording duration before VAD can trigger (ms)
-    },
-    
     // Audio Configuration
     AUDIO: {
         DEFAULT_SPEED: 1.0,
@@ -139,7 +130,6 @@ export const CONFIG = {
         RETRY_ATTEMPTS: 3,
         RETRY_DELAY: 1000, // ms
         TIMEOUT: 60000, // 60 seconds
-        LLM_TIMEOUT: 180000, // 3 minutes for LLM
         TTS_TIMEOUT: 120000, // 2 minutes for TTS
     },
     

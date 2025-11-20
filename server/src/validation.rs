@@ -4,8 +4,6 @@ use crate::error::ApiError;
 const MAX_TEXT_LENGTH: usize = 5000;
 /// Minimum text length for TTS requests
 const MIN_TEXT_LENGTH: usize = 1;
-/// Maximum message length for chat requests
-const MAX_MESSAGE_LENGTH: usize = 10000;
 
 /// Validate TTS request
 pub fn validate_tts_request(text: &str, language: Option<&str>) -> Result<(), ApiError> {
@@ -39,20 +37,6 @@ pub fn validate_tts_request(text: &str, language: Option<&str>) -> Result<(), Ap
     Ok(())
 }
 
-/// Validate chat request
-pub fn validate_chat_request(message: &str) -> Result<(), ApiError> {
-    if message.is_empty() {
-        return Err(ApiError::InvalidInput("Message cannot be empty".to_string()));
-    }
-    if message.len() > MAX_MESSAGE_LENGTH {
-        return Err(ApiError::InvalidInput(format!(
-            "Message too long (max {} characters)",
-            MAX_MESSAGE_LENGTH
-        )));
-    }
-    Ok(())
-}
-
 /// Validate language code format (e.g., en_US, de_DE)
 fn is_valid_language_code(code: &str) -> bool {
     // Language code should be in format: ll_CC (2 lowercase letters, underscore, 2 uppercase letters)
@@ -68,22 +52,6 @@ fn is_valid_language_code(code: &str) -> bool {
         }
         _ => false,
     }
-}
-
-/// Validate conversation ID format (UUID)
-pub fn validate_conversation_id(id: &str) -> Result<(), ApiError> {
-    if id.is_empty() {
-        return Err(ApiError::InvalidInput(
-            "Conversation ID cannot be empty".to_string(),
-        ));
-    }
-    // Basic UUID format validation
-    if uuid::Uuid::parse_str(id).is_err() {
-        return Err(ApiError::InvalidInput(
-            "Invalid conversation ID format. Expected UUID".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -130,33 +98,4 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_validate_chat_request_valid() {
-        assert!(validate_chat_request("Hello").is_ok());
-    }
-
-    #[test]
-    fn test_validate_chat_request_empty() {
-        let result = validate_chat_request("");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_chat_request_too_long() {
-        let long_message = "a".repeat(11000);
-        let result = validate_chat_request(&long_message);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_conversation_id_valid() {
-        let valid_uuid = uuid::Uuid::new_v4().to_string();
-        assert!(validate_conversation_id(&valid_uuid).is_ok());
-    }
-
-    #[test]
-    fn test_validate_conversation_id_invalid() {
-        assert!(validate_conversation_id("invalid-uuid").is_err());
-        assert!(validate_conversation_id("").is_err());
-    }
 }

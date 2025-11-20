@@ -5,8 +5,6 @@
  */
 export const tabConfig = {
     tts: { title: 'Text-to-Speech', desc: 'Convert text to natural-sounding speech', file: 'tabs/tts.html' },
-    chat: { title: 'AI Chat', desc: 'Chat with AI assistant', file: 'tabs/chat.html' },
-    'voice-chat': { title: 'Voice Mode', desc: 'Real-time voice conversation', file: 'tabs/voice-chat.html' },
     server: { title: 'Server Information', desc: 'Server status and configuration', file: 'tabs/server.html' }
 };
 
@@ -152,11 +150,6 @@ export async function setupTabs(onTabChange = null) {
                 // Call tab change callback
                 if (onTabChange) {
                     await onTabChange(targetTab, targetContent);
-                }
-                
-                // Update LLM provider visibility (if function exists)
-                if (typeof window.updateLlmProviderVisibility === 'function') {
-                    window.updateLlmProviderVisibility(targetTab);
                 }
             }
         });

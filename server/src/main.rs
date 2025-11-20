@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use axum::{
     extract::{Request, State},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 
@@ -38,6 +38,7 @@ pub struct AppState {
 pub struct TtsRequest {
     text: String,
     language: Option<String>,
+    #[allow(dead_code)]
     speaker: Option<i64>,
     voice: Option<String>, // voice ID (e.g., "norman", "thorsten")
 }
@@ -442,41 +443,6 @@ pub async fn tts_endpoint(
     }))
 }
 
-
-/// Detect emotional tone from text based on punctuation and keywords
-/// Returns a prosody hint (rate, pitch) for more expressive speech
-fn detect_emotion(text: &str) -> (f32, f32) {
-    let text_lower = text.to_lowercase();
-    
-    // Excitement indicators (exclamation marks, exciting words)
-    let has_excitement = text.contains('!') || 
-        text_lower.contains("amazing") || text_lower.contains("wonderful") || 
-        text_lower.contains("fantastic") || text_lower.contains("incredible") ||
-        text_lower.contains("excellent") || text_lower.contains("great");
-    
-    // Question indicators (questions typically have rising intonation)
-    let is_question = text.trim_end().ends_with('?');
-    
-    // Sadness/concern indicators
-    let has_concern = text_lower.contains("sorry") || text_lower.contains("unfortunately") ||
-        text_lower.contains("problem") || text_lower.contains("issue") ||
-        text_lower.contains("difficult") || text_lower.contains("challenge");
-    
-    // Adjust prosody based on emotion
-    if has_excitement {
-        // Slightly faster, higher pitch for excitement
-        (1.05, 1.1)
-    } else if is_question {
-        // Normal speed, slightly higher pitch for questions (rising intonation)
-        (1.0, 1.05)
-    } else if has_concern {
-        // Slightly slower, lower pitch for concern
-        (0.95, 0.95)
-    } else {
-        // Neutral prosody
-        (1.0, 1.0)
-    }
-}
 
 /// Clean text for natural TTS speech
 /// Removes markdown, special formatting, and converts text to be more natural for speech

@@ -1,6 +1,6 @@
 # TTS Project
 
-High-performance multilingual Text-to-Speech and Chat server built with Rust, featuring Piper TTS engine integration and OpenAI/Ollama LLM support.
+High-performance multilingual Text-to-Speech server built with Rust, featuring Piper TTS engine integration.
 
 ## 📚 Documentation
 
@@ -29,20 +29,15 @@ docker-compose up --build
 cargo build --release
 cargo run --release -p server
 
-# Required for chat
-export OPENAI_API_KEY="your_key"
-export LLM_PROVIDER="openai"
-
 # Health check
 curl http://localhost:8085/health
 ```
 
 ## Project Structure
 
-Rust workspace with three crates:
+Rust workspace with two crates:
 - **tts_core** – Piper TTS wrapper for speech synthesis and mel spectrograms
-- **llm_core** – LLM client (OpenAI/Ollama) with optional Qdrant conversation history
-- **server** – HTTP API server for TTS and chat
+- **server** – HTTP API server for TTS
 
 ## Features
 
@@ -54,16 +49,9 @@ Rust workspace with three crates:
 - **Mel Spectrograms**: Real-time mel spectrogram generation for visualization
 - **Real-time Streaming**: WebSocket-based streaming with progressive audio chunks
 
-### LLM Integration
-- **Multiple Providers**: OpenAI API and Ollama (local) support
-- **Conversation History**: Stateful conversations with context management
-- **Qdrant Storage**: Optional vector database storage for conversation persistence
-- **Streaming Support**: Real-time token streaming for responsive chat experience
-- **Text Cleaning**: Automatic markdown removal and formatting for natural TTS speech
-
 ### API & Infrastructure
-- **REST API**: Comprehensive REST endpoints for TTS and chat
-- **WebSocket Streaming**: Real-time audio and text streaming
+- **REST API**: Comprehensive REST endpoints for TTS
+- **WebSocket Streaming**: Real-time audio streaming
 - **Input Validation**: Robust request validation with helpful error messages
 - **Rate Limiting**: Configurable rate limiting (default: 60 req/min)
 - **CORS Support**: Configurable CORS for cross-origin requests
@@ -80,8 +68,6 @@ Rust workspace with three crates:
 | `GET` | `/voices` | List available language codes |
 | `GET` | `/voices/detail` | Detailed voice information (all voices with metadata) |
 | `POST` | `/tts` | Synthesize speech (returns base64 WAV) |
-| `POST` | `/chat` | Chat with LLM (text response) |
-| `POST` | `/voice-chat` | Chat with LLM (text + audio response) |
 | `GET` | `/metrics` | Server metrics (CPU, memory, request count, uptime) |
 
 ### WebSocket Endpoints
@@ -89,7 +75,6 @@ Rust workspace with three crates:
 | Endpoint | Description |
 |----------|-------------|
 | `WS /stream/{lang}/{text}?voice={voice_id}` | Real-time TTS audio streaming with mel spectrogram |
-| `WS /ws/chat/stream?message={text}&conversation_id={id}&language={lang}` | Streaming chat (LLM tokens + TTS audio chunks) |
 
 **Note:** All REST endpoints are also available under `/api` prefix.
 
@@ -103,22 +88,9 @@ See [API Reference](docs/API.md) for complete documentation, request/response fo
 |----------|----------|---------|-------------|
 | `PORT` | No | `8085` | Server port |
 | `RATE_LIMIT_PER_MINUTE` | No | `60` | Rate limit per minute |
-| `LLM_TIMEOUT_SECS` | No | `120` | LLM request timeout (seconds) |
 | `REQUEST_TIMEOUT_SECS` | No | `60` | General request timeout (seconds) |
 | `CORS_ALLOWED_ORIGINS` | No | - | Comma-separated list of allowed origins |
 | `RUST_LOG` | No | `info` | Log level (trace, debug, info, warn, error) |
-
-### LLM Configuration
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `LLM_PROVIDER` | No | `openai` | `openai` or `ollama` |
-| `LLM_MODEL` | No | `gpt-3.5-turbo` | Model name (varies by provider) |
-| `OPENAI_API_KEY` | Yes* | - | OpenAI API key (*required for OpenAI provider) |
-| `OPENAI_ORG_ID` | No | - | OpenAI organization ID (optional) |
-| `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Ollama server URL |
-| `QDRANT_URL` | No | - | Qdrant server URL (optional, must not be empty if set) |
-| `QDRANT_API_KEY` | No | - | Qdrant API key (optional) |
 
 ### TTS Configuration
 
@@ -133,12 +105,10 @@ See [API Reference](docs/API.md) for complete documentation, request/response fo
 ### For Docker Deployment
 - **Docker** and **Docker Compose**
 - **Piper TTS Models** (~70MB each, download separately)
-- **OpenAI API Key** (for OpenAI provider) or **Ollama** (for local LLM)
 
 ### For Local Development
 - **Rust** 1.70+ ([rustup.rs](https://rustup.rs))
 - **Piper TTS Models** (~70MB each, download separately)
-- **OpenAI API Key** (for OpenAI provider) or **Ollama** (for local LLM)
 - **Python 3** (for frontend development server, optional)
 
 ### Model Setup
@@ -160,7 +130,7 @@ docker-compose up --build
 ```bash
 # TTS Server
 docker build -t tts-server .
-docker run -p 8085:8085 -e OPENAI_API_KEY="your_key" tts-server
+docker run -p 8085:8085 tts-server
 
 # Frontend
 cd frontend && docker build -t tts-frontend .

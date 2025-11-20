@@ -366,41 +366,6 @@ body {
     flex-wrap: wrap;
 }
 
-.llm-provider-selector {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.llm-provider-selector label {
-    color: var(--text-secondary);
-    font-size: var(--font-sm);
-    white-space: nowrap;
-}
-
-.provider-select {
-    background: var(--surface-light);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    padding: var(--space-xs) var(--space-sm);
-    font-size: var(--font-sm);
-    cursor: pointer;
-    transition: var(--transition);
-    min-width: 120px;
-}
-
-.provider-select:hover {
-    border-color: var(--border-lighter);
-    background: var(--surface-lighter);
-}
-
-.provider-select:focus {
-    outline: none;
-    border-color: var(--info);
-    box-shadow: 0 0 0 2px rgba(68, 170, 255, 0.2);
-}
-
 .header h1 {
     font-size: var(--font-xl);
     font-weight: 600;

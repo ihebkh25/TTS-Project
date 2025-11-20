@@ -2,7 +2,6 @@
 
 import { initElements } from './utils/dom.js';
 import { setupTabs } from './utils/tabs.js';
-import { populateLanguageSelects } from './utils/voices.js';
 import { showToast } from './utils/toast.js';
 import { updateServerStatus } from './utils/dom.js';
 import { setupCustomAudioPlayer, downloadAudio } from './components/audioPlayer.js';

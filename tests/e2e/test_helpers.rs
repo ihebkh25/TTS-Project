@@ -2,16 +2,14 @@
 
 use axum::Router;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tts_core::TtsManager;
-use llm_core::{LlmClient, LlmProvider};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 pub struct AppState {
     pub tts: Arc<tts_core::TtsManager>,
-    pub llm: Arc<Mutex<LlmClient>>,
 }
 
 /// Create a test app instance for e2e tests
@@ -23,7 +21,7 @@ pub async fn create_test_app() -> Router {
         Json,
     };
     use server::error::ApiError;
-    use server::validation::{validate_tts_request, validate_chat_request, validate_conversation_id};
+    use server::validation::validate_tts_request;
     
     // Create minimal TTS manager for testing
     let mut map = HashMap::new();
@@ -52,22 +50,7 @@ pub async fn create_test_app() -> Router {
     
     let tts = Arc::new(TtsManager::new(map));
 
-    // Create LLM client using Ollama
-    // Set OLLAMA_BASE_URL if not set (for tests)
-    if std::env::var("OLLAMA_BASE_URL").is_err() {
-        std::env::set_var("OLLAMA_BASE_URL", "http://localhost:11434");
-    }
-    let llm = Arc::new(std::sync::Mutex::new(
-        LlmClient::new(LlmProvider::Ollama, "llama3")
-            .unwrap_or_else(|_| {
-                // If LLM client creation fails, try again
-                // This allows tests to run even without LLM configured
-                LlmClient::new(LlmProvider::Ollama, "llama3")
-                    .unwrap_or_else(|_| panic!("Failed to create LLM client"))
-            }),
-    ));
-
-    let state = AppState { tts, llm };
+    let state = AppState { tts };
     
     // Define request/response types (matching main.rs)
     #[derive(serde::Deserialize)]
@@ -82,22 +65,6 @@ pub async fn create_test_app() -> Router {
         audio_base64: String,
         duration_ms: u64,
         sample_rate: u32,
-    }
-    
-    #[derive(serde::Deserialize)]
-    struct ChatRequest {
-        message: String,
-        conversation_id: Option<String>,
-        language: Option<String>,
-    }
-    
-    #[derive(serde::Serialize)]
-    struct ChatResponse {
-        reply: String,
-        conversation_id: String,
-        audio_base64: Option<String>,
-        sample_rate: Option<u32>,
-        duration_ms: Option<u64>,
     }
     
     Router::new()
@@ -151,102 +118,6 @@ pub async fn create_test_app() -> Router {
                                 }))
                             }
                         }
-                    }
-                    Err(e) => {
-                        let status = match e {
-                            ApiError::InvalidInput(_) => axum::http::StatusCode::BAD_REQUEST,
-                            _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        };
-                        Err((status, Json(serde_json::json!({"error": e.to_string()}))))
-                    }
-                }
-            }
-        }))
-        .route("/chat", post({
-            move |State(s): State<AppState>, Json(req): Json<ChatRequest>| async move {
-                match validate_chat_request(&req.message) {
-                    Ok(_) => {
-                        if let Some(ref conv_id) = req.conversation_id {
-                            if let Err(e) = validate_conversation_id(conv_id) {
-                                let status = match e {
-                                    ApiError::InvalidInput(_) => axum::http::StatusCode::BAD_REQUEST,
-                                    _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                };
-                                return Err((status, Json(serde_json::json!({"error": e.to_string()}))));
-                            }
-                        }
-                        
-                        // Try to use actual LLM if configured
-                        let reply = {
-                            let llm_guard = s.llm.lock().unwrap();
-                            // For e2e tests, we'll use mock responses unless LLM is properly configured
-                            // This allows tests to verify structure even without LLM
-                            "Mock LLM response for e2e testing".to_string()
-                        };
-                        
-                        let conversation_id = req.conversation_id
-                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                        
-                        // Generate audio if language is specified
-                        let (audio_base64, sample_rate, duration_ms) = if let Some(lang) = &req.language {
-                            match s.tts.synthesize_with_sample_rate(&reply, Some(lang), None) {
-                                Ok((samples, sr)) => {
-                                    let audio = tts_core::TtsManager::encode_wav_base64(&samples, sr)
-                                        .unwrap_or_default();
-                                    let dur = (samples.len() as f32 / sr as f32 * 1000.0) as u64;
-                                    (Some(audio), Some(sr), Some(dur))
-                                }
-                                Err(_) => (None, None, None),
-                            }
-                        } else {
-                            (None, None, None)
-                        };
-                        
-                        Ok(Json(ChatResponse {
-                            reply,
-                            conversation_id,
-                            audio_base64,
-                            sample_rate,
-                            duration_ms,
-                        }))
-                    }
-                    Err(e) => {
-                        let status = match e {
-                            ApiError::InvalidInput(_) => axum::http::StatusCode::BAD_REQUEST,
-                            _ => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        };
-                        Err((status, Json(serde_json::json!({"error": e.to_string()}))))
-                    }
-                }
-            }
-        }))
-        .route("/voice-chat", post({
-            move |State(s): State<AppState>, Json(req): Json<ChatRequest>| async move {
-                // Similar to /chat but always generates audio
-                match validate_chat_request(&req.message) {
-                    Ok(_) => {
-                        let reply = "Mock voice chat response".to_string();
-                        let conversation_id = req.conversation_id
-                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                        
-                        let lang = req.language.as_deref().unwrap_or("en_US");
-                        let (audio_base64, sample_rate, duration_ms) = match s.tts.synthesize_with_sample_rate(&reply, Some(lang), None) {
-                            Ok((samples, sr)) => {
-                                let audio = tts_core::TtsManager::encode_wav_base64(&samples, sr)
-                                    .unwrap_or_default();
-                                let dur = (samples.len() as f32 / sr as f32 * 1000.0) as u64;
-                                (Some(audio), Some(sr), Some(dur))
-                            }
-                            Err(_) => (Some("mock_audio".to_string()), Some(22050), Some(1000)),
-                        };
-                        
-                        Ok(Json(ChatResponse {
-                            reply,
-                            conversation_id,
-                            audio_base64,
-                            sample_rate,
-                            duration_ms,
-                        }))
                     }
                     Err(e) => {
                         let status = match e {
